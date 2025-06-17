@@ -6,7 +6,9 @@ const apiRouter = require('./routes');
 const app = express();
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://192.168.0.2:5173'],
+  origin: ['http://localhost:5173', 
+    'http://192.168.0.2:5173',
+    'https://hydrosense.shobuno.org'],
   credentials: true,
 }));
 app.use(express.json());

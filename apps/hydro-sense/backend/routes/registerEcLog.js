@@ -1,7 +1,9 @@
 // routes/registerEcLog.js
 const express = require("express");
 const router = express.Router();
-const db = require("../db");
+const path = require("path");
+const db = require(path.resolve(__dirname, "../config/db"));
+
 
 // POST /api/register-ec-log
 router.post("/", async (req, res) => {

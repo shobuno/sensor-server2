@@ -1,8 +1,8 @@
-// routes/sensorInfo.js
+// apps/hydro-sense/backend/routes/sensorInfo.js
 
 const express = require('express');
 const router = express.Router();
-const path = require('path');
+const path = require('path'); 
 const db = require(path.resolve(__dirname, '../config/db'));
 
 // ✅ GET /api/sensor-serials?type=water
@@ -25,7 +25,7 @@ router.get('/sensor-serials', async (req, res) => {
 router.get('/latest-hourly-avg', async (req, res) => {
   try {
     const result = await db.query(
-      "SELECT water_avg AS water_avg, ec_avg FROM sensor_1h_values ORDER BY timestamp DESC LIMIT 1"
+      "SELECT water_avg, ec_avg FROM sensor_1h_values ORDER BY timestamp DESC LIMIT 1"
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'データが見つかりません' });

@@ -1,4 +1,4 @@
-// components/EcCorrectionForm.jsx
+// frontend/src/components/EcCorrectionForm.jsx
 import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ export default function EcCorrectionForm() {
   const [ecCorrected, setEcCorrected] = useState(null);
   const navigate = useNavigate();
   const apiBase = import.meta.env.VITE_API_BASE_URL;
+  console.log("✅ apiBase is:", apiBase);
 
   useEffect(() => {
     fetch(`${apiBase}/api/sensor-serials?type=water`)

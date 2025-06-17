@@ -1,10 +1,11 @@
-// routes/calculateEcCorrected.js
+//backend/routes/calculateEcCorrected.js
 
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const path = require('path');
+const db = require(path.resolve(__dirname, '../config/db'));
 
-router.post('/calculate-ec-corrected', async (req, res) => {
+router.post('/', async (req, res) => {
   const { serial_number, ec_raw, temperature } = req.body;
 
   if (!serial_number || typeof ec_raw !== 'number' || typeof temperature !== 'number') {
