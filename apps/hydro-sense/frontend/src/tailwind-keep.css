@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 保護用のクラス（使用されているクラスを明示） */
+.keep-these {
+  @apply bg-gray-100 bg-white text-2xl p-2 mb-4 mb-6 rounded w-full max-w-sm mx-auto
+         flex justify-center shadow-md hover:bg-blue-600 bg-blue-500 text-white;
+}

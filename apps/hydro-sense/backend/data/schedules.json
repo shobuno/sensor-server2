@@ -1,0 +1,52 @@
+[
+  {
+    "id": "1748678315063",
+    "enabled": true,
+    "days": [
+      "everyday"
+    ],
+    "time": "09:00",
+    "relays": [
+      1
+    ],
+    "action": "on"
+  },
+  {
+    "id": "1748678328871",
+    "enabled": true,
+    "days": [
+      "everyday"
+    ],
+    "time": "21:00",
+    "relays": [
+      1
+    ],
+    "action": "off"
+  },
+  {
+    "id": "1748935624817",
+    "enabled": true,
+    "days": [
+      "tue",
+      "wed"
+    ],
+    "time": "04:50",
+    "relays": [
+      1
+    ],
+    "action": "on"
+  },
+  {
+    "id": "1749032311328",
+    "enabled": true,
+    "days": [
+      "tue",
+      "wed"
+    ],
+    "time": "05:53",
+    "relays": [
+      1
+    ],
+    "action": "off"
+  }
+]
