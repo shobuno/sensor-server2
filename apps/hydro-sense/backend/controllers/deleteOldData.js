@@ -1,3 +1,5 @@
+//hydro-sense/backend/controllers/deleteOldData.js
+
 const path = require('path'); 
 const db = require(path.resolve(__dirname, '../config/db'));
 

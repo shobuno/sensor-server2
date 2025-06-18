@@ -24,17 +24,20 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅ 静的ファイル配信（Reactビルド済み）
-app.use('/hydro-sense', express.static(path.join(__dirname, 'apps/hydro-sense/views/dist')));
+// ✅ 正しい静的配信パスに修正
+app.use('/hydro-sense', express.static(path.join(__dirname, 'apps/hydro-sense/frontend/dist')));
+
 
 // ✅ APIルーティング
 const hydroRoutes = require('./apps/hydro-sense/backend/routes');
 app.use('/api', hydroRoutes);
 
 // ✅ SPA fallback
+
 app.get(/^\/hydro-sense(?!\/api\/).*/, (req, res) => {
-  res.sendFile(path.join(__dirname, 'apps/hydro-sense/views/dist/index.html'));
+  res.sendFile(path.join(__dirname, 'apps/hydro-sense/frontend/dist/index.html'));
 });
+
 
 // ✅ WebSocket設定
 const setupHydroWS = require('./apps/hydro-sense/wsHandlers/ws');
@@ -51,3 +54,22 @@ server.listen(port, () => {
 app.get('/', (req, res) => {
   res.redirect('/hydro-sense');
 });
+
+// === 深夜2時の定期処理 ===
+const cron = require('node-cron');
+
+const { aggregateWaterDailyValues } = require(path.resolve(__dirname, './apps/hydro-sense/backend/controllers/aggregateWaterDaily'));
+const { deleteOldData } = require(path.resolve(__dirname, './apps/hydro-sense/backend/controllers/deleteOldData'));
+
+cron.schedule('0 2 * * *', async () => {
+  console.log('🌙 深夜2時定期処理開始');
+  try {
+    await aggregateWaterDailyValues();
+    await deleteOldData();
+    console.log('✅ 深夜2時定期処理完了');
+  } catch (err) {
+    console.error('🔥 深夜定期処理中にエラー:', err);
+  }
+});
+
+

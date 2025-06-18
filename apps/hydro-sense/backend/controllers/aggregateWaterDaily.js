@@ -1,3 +1,5 @@
+// hydoro-sense/backend/controllers/aggregateWaterDaily.js
+
 const path = require('path'); 
 const db = require(path.resolve(__dirname, '../config/db'));
 

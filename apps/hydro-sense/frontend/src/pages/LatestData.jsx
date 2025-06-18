@@ -259,7 +259,16 @@ export default function LatestData() {
                       width={38}
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
                     />
-                    <Tooltip />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: isDark ? '#222' : '#fff',
+                        color: isDark ? '#fff' : '#222',
+                        border: '1px solid #444'
+                      }}
+                      labelStyle={{
+                        color: isDark ? '#fff' : '#222'
+                      }}
+                    />
                     <Legend verticalAlign="top" align="right" />
                     {/* 気温の塗りつぶし */}
                     <Area
@@ -303,7 +312,16 @@ export default function LatestData() {
                       tickFormatter={(value) => value != null ? value.toFixed(2) : ''}
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
                     />
-                    <Tooltip />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: isDark ? '#222' : '#fff',
+                        color: isDark ? '#fff' : '#222',
+                        border: '1px solid #444'
+                      }}
+                      labelStyle={{
+                        color: isDark ? '#fff' : '#222'
+                      }}
+                    />
                     <Legend verticalAlign="top" align="right" />
                     <Area
                       type="monotone"

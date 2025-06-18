@@ -27,6 +27,32 @@ const RANGE_OPTIONS = [
   { key: '2y', label: '2年' },
 ];
 
+function useDarkMode() {
+  const getIsDark = () =>
+    document.documentElement.classList.contains('dark') ||
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  const [isDark, setIsDark] = useState(getIsDark);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(getIsDark());
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const mediaListener = () => setIsDark(getIsDark());
+    media.addEventListener('change', mediaListener);
+
+    return () => {
+      observer.disconnect();
+      media.removeEventListener('change', mediaListener);
+    };
+  }, []);
+
+  return isDark;
+}
+
 export default function GraphDisplay() {
   const [graphTypeAvg, setGraphTypeAvg] = useState(() => localStorage.getItem('graphTypeAvg') || 'air_avg');
   const [graphTypeAll, setGraphTypeAll] = useState(() => localStorage.getItem('graphTypeAll') || 'air_all');
@@ -34,6 +60,7 @@ export default function GraphDisplay() {
   const [dataAvg, setDataAvg] = useState([]);
   const [dataAll, setDataAll] = useState([]);
   const navigate = useNavigate();
+  const isDark = useDarkMode();
 
   useEffect(() => {
     localStorage.setItem('graphTypeAvg', graphTypeAvg);
@@ -154,7 +181,16 @@ export default function GraphDisplay() {
             <AreaChart data={dataAvg} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
               <XAxis dataKey="timestamp" />
               <YAxis domain={['auto', 'auto']} width={50} />
-              <Tooltip />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: isDark ? '#222' : '#fff',
+                  color: isDark ? '#fff' : '#222',
+                  border: '1px solid #444'
+                }}
+                labelStyle={{
+                  color: isDark ? '#fff' : '#222'
+                }}
+              />
               <Legend verticalAlign="top" align="right" />
               {renderLines(graphTypeAvg)}
             </AreaChart>
@@ -179,7 +215,16 @@ export default function GraphDisplay() {
             <LineChart data={dataAll} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
               <XAxis dataKey="timestamp" />
               <YAxis domain={['auto', 'auto']} width={50} />
-              <Tooltip />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: isDark ? '#222' : '#fff',
+                  color: isDark ? '#fff' : '#222',
+                  border: '1px solid #444'
+                }}
+                labelStyle={{
+                  color: isDark ? '#fff' : '#222'
+                }}
+              />
               <Legend verticalAlign="top" align="right" />
               {renderLines(graphTypeAll)}
             </LineChart>
