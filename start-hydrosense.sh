@@ -15,15 +15,11 @@ tmux new-session -d -s $SESSION_NAME
 tmux rename-window -t $SESSION_NAME:0 'tunnel'
 tmux send-keys -t $SESSION_NAME:0 'cloudflared tunnel --config ~/.cloudflared/config.yml run' C-m
 
-# Backend (APIサーバ)
-tmux new-window -t $SESSION_NAME:1 -n 'backend'
+# サーバー + React自動ビルド
+tmux new-window -t $SESSION_NAME:1 -n 'server'
 tmux send-keys -t $SESSION_NAME:1 'cd /Volumes/USB4_2TB/webApps/sensor-server' C-m
+tmux send-keys -t $SESSION_NAME:1 'npm run --prefix apps/hydro-sense/frontend build' C-m
 tmux send-keys -t $SESSION_NAME:1 'node server.js' C-m
-
-# Frontend (React - ビルド済みの表示)
-tmux new-window -t $SESSION_NAME:2 -n 'frontend'
-tmux send-keys -t $SESSION_NAME:2 'cd /Volumes/USB4_2TB/webApps/sensor-server/apps/hydro-sense/frontend' C-m
-tmux send-keys -t $SESSION_NAME:2 'npx serve -s dist -l 5173' C-m
 
 # 自動でセッションにアタッチ
 tmux attach-session -t $SESSION_NAME
