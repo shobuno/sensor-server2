@@ -8,7 +8,7 @@ const DELETE_RULES = {
   sensor_10m_values: "now() - interval '2 days'",
   sensor_1h_values: "now() - interval '2 months'",
   sensor_daily_values: "now() - interval '3 years'",
-  water_sensor: "now() - interval '2 months'",
+  water_sensor: "now() - interval '2 days'",
   water_daily_values: "current_date - interval '3 years'"
 };
 
