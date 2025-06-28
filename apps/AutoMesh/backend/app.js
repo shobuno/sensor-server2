@@ -1,10 +1,13 @@
 // AutoMesh/backend/app.js
 
-const express = require('express');
+const express = require("express");
+
+const path = require("path");
 const cors = require('cors');
 const app = express();
 
 // ルート定義ファイルを読み込む
+
 const registerDeviceRouter = require('./routes/registerDevice');
 const getDevicesRouter = require('./routes/getDevices');
 const entryDevicesRouter = require('./routes/entryDevices');
@@ -21,6 +24,9 @@ app.use(cors());
 app.use(express.json());
 
 // 明示的に全ルートを登録
+// 📌 Viteでビルドしたフロントエンド（AutoMesh）の静的ファイル公開
+app.use("/auto-mesh", express.static(path.join(__dirname, "../frontend/dist")));
+
 app.use('/register-device', registerDeviceRouter);
 app.use('/get-devices', getDevicesRouter);
 app.use('/entry-devices', entryDevicesRouter);

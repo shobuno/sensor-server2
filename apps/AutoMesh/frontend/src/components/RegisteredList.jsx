@@ -69,19 +69,19 @@ export default function RegisteredList() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold mb-2">登録済みデバイス一覧</h2>
+      <h2 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">登録済みデバイス一覧</h2>
       {deviceGroups.length === 0 ? (
-        <p className="text-gray-500">登録済みデバイスはありません。</p>
+        <p className="text-gray-500 dark:text-gray-300">登録済みデバイスはありません。</p>
       ) : (
-        <table className="w-full border mt-2">
+        <table className="w-full border mt-2 bg-white dark:bg-gray-800 dark:border-gray-700">
           <thead>
             <tr>
-              <th className="border p-2">シリアル番号</th>
-              <th className="border p-2">リレー番号</th>
-              <th className="border p-2">名前</th>
-              <th className="border p-2">役割</th>
-              <th className="border p-2">登録日時</th>
-              <th className="border p-2">操作</th>
+              <th className="border p-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">シリアル番号</th>
+              <th className="border p-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">リレー番号</th>
+              <th className="border p-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">名前</th>
+              <th className="border p-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">役割</th>
+              <th className="border p-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">登録日時</th>
+              <th className="border p-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -94,52 +94,53 @@ export default function RegisteredList() {
 
                 return (
                   <tr key={`${group.serial_number}-${device.relay_index}`}>
-                    <td className="border p-2">{group.serial_number}</td>
-                    <td className="border p-2">{device.relay_index}</td>
-                    <td className="border p-2">
+                    <td className="border p-2 text-gray-900 dark:text-gray-100">{group.serial_number}</td>
+                    <td className="border p-2 text-gray-900 dark:text-gray-100">{device.relay_index}</td>
+                    <td className="border p-2 text-gray-900 dark:text-gray-100">
                       {isEditing ? (
                         <input
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          className="border p-1 w-full"
+                          className="border p-1 w-full bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 rounded"
                         />
                       ) : (
                         device.name || '-'
                       )}
                     </td>
-                    <td className="border p-2">{device.role || '-'}</td>
-                    <td className="border p-2">
+                    <td className="border p-2 text-gray-900 dark:text-gray-100">{device.role || '-'}</td>
+                    <td className="border p-2 text-gray-900 dark:text-gray-100">
                       {device.registered_at
                         ? new Date(device.registered_at).toLocaleString('ja-JP')
                         : '-'}
                     </td>
-                    <td className="border p-2 space-x-2">
+                    <td className="border p-2 space-x-1 sm:space-x-2">
                       <button
-                        className="bg-yellow-500 text-white px-3 py-1 rounded"
+                        className="text-xs sm:text-base px-2 sm:px-3 py-1 rounded bg-yellow-500 dark:bg-yellow-600 text-white"
                         onClick={() => handleBlink(group.serial_number, device.relay_index)}
                       >
-                        点滅
+                        <span className="inline sm:hidden">点</span>
+                        <span className="hidden sm:inline">点滅</span>
                       </button>
                       {isEditing ? (
                         <>
                           <button
-                            className="bg-green-600 text-white px-3 py-1 rounded"
-                            onClick={() =>
-                              handleSaveName(group.serial_number, device.relay_index)
-                            }
+                            className="text-xs sm:text-base px-2 sm:px-3 py-1 rounded bg-green-600 dark:bg-green-700 text-white"
+                            onClick={() => handleSaveName(group.serial_number, device.relay_index)}
                           >
-                            保存
+                            <span className="inline sm:hidden">保</span>
+                            <span className="hidden sm:inline">保存</span>
                           </button>
                           <button
-                            className="ml-2 bg-gray-400 text-white px-3 py-1 rounded"
+                            className="text-xs sm:text-base px-2 sm:px-3 py-1 rounded bg-gray-400 dark:bg-gray-600 text-white"
                             onClick={() => setEditTarget(null)}
                           >
-                            キャンセル
+                            <span className="inline sm:hidden">戻</span>
+                            <span className="hidden sm:inline">キャンセル</span>
                           </button>
                         </>
                       ) : (
                         <button
-                          className="bg-blue-500 text-white px-3 py-1 rounded"
+                          className="text-xs sm:text-base px-2 sm:px-3 py-1 rounded bg-blue-500 dark:bg-blue-600 text-white"
                           onClick={() => {
                             setEditTarget({
                               serial_number: group.serial_number,
@@ -148,14 +149,16 @@ export default function RegisteredList() {
                             setEditName(device.name || '');
                           }}
                         >
-                          編集
+                          <span className="inline sm:hidden">編</span>
+                          <span className="hidden sm:inline">編集</span>
                         </button>
                       )}
                       <button
-                        className="bg-red-500 text-white px-3 py-1 rounded"
+                        className="text-xs sm:text-base px-2 sm:px-3 py-1 rounded bg-red-500 dark:bg-red-600 text-white"
                         onClick={() => handleUnregister(group.serial_number)}
                       >
-                        登録解除
+                        <span className="inline sm:hidden">解</span>
+                        <span className="hidden sm:inline">登録解除</span>
                       </button>
                     </td>
                   </tr>

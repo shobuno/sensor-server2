@@ -5,13 +5,15 @@ export default function DeviceControl() {
   const [devices, setDevices] = useState([]);
 
   const fetchData = async () => {
-    const [deviceRes, stateRes] = await Promise.all([
+    const [deviceRes, stateRes, connRes] = await Promise.all([
       fetch("/automesh/api/get-devices"),
       fetch("/automesh/api/relay-states"),
+      fetch("/automesh/api/connection-status"),
     ]);
 
     const deviceGroups = await deviceRes.json();
     const relayStates = await stateRes.json();
+    const connectedSerials = await connRes.json(); // ← オンライン装置一覧
 
     const combined = deviceGroups.flatMap(group =>
       group.devices.map(device => {
@@ -22,6 +24,7 @@ export default function DeviceControl() {
           ...device,
           serial_number: group.serial_number,
           state: foundState ? foundState.state : false,
+          connected: connectedSerials.includes(group.serial_number), // ← 追加
         };
       })
     );
@@ -58,40 +61,67 @@ export default function DeviceControl() {
   }, []);
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">デバイス制御</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        {devices.map((device, idx) => (
+    <div className="p-2 sm:p-6 bg-white dark:bg-gray-900 min-h-screen">
+      <h2 className="text-3xl sm:text-4xl font-bold mb-8 sm:mb-10 leading-tight text-gray-900 dark:text-white">
+        デバイス制御
+      </h2>
+      <div className="grid grid-cols-1 gap-8 sm:gap-12">
+        {devices.map((device) => (
           <div
             key={`${device.serial_number}-${device.relay_index}`}
-            className="p-4 border rounded-lg shadow flex items-center justify-between gap-4"
+            className="p-8 sm:p-12 border-2 rounded-3xl shadow bg-white dark:bg-gray-800 dark:border-gray-700 flex gap-8"
           >
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 md:gap-4 flex-1 min-w-0">
               <div
-                className={`w-6 h-6 rounded-full ${
-                  device.state ? "bg-green-500" : "bg-gray-400"
-                }`}
+                className={`
+                  w-10 h-10 md:w-12 md:h-12 rounded-full
+                  ${
+                    device.connected
+                      ? "bg-sky-300 dark:bg-sky-400"
+                      : "bg-gray-400 dark:bg-gray-600"
+                  }
+                `}
               ></div>
-              <div>
-                <div className="font-semibold">{device.name}</div>
-                <div className="text-xs text-gray-500">
-                  {device.serial_number}（relay {device.relay_index}）
+              <div className="min-w-0">
+                <div className="font-semibold text-xl md:text-2xl lg:text-lg leading-tight text-gray-900 dark:text-white">
+                  {device.name}
+                </div>
+                <div className="text-base text-gray-500 break-all md:text-base md:leading-tight lg:text-base dark:text-gray-300">
+                  <nobr>{device.serial_number}（relay {device.relay_index}）</nobr>
                 </div>
               </div>
             </div>
-
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={device.state}
-                onChange={() =>
-                  toggleRelay(device.serial_number, device.relay_index, device.state)
-                }
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-green-500 transition-all"></div>
-              <div className="absolute w-5 h-5 bg-white rounded-full border top-0.5 left-0.5 peer-checked:translate-x-full transition-transform"></div>
-            </label>
+            <div className="flex items-center">
+              <label className="relative inline-flex items-center cursor-pointer h-6 w-12 md:h-8 md:w-20">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={device.state}
+                  onChange={() =>
+                    toggleRelay(device.serial_number, device.relay_index, device.state)
+                  }
+                />
+                <div className="
+                  w-12 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-green-500 transition-all
+                  md:w-20 md:h-8
+                  dark:bg-gray-700 dark:peer-checked:bg-green-400
+                "></div>
+                <div className="
+                  absolute
+                  top-1/2
+                  left-1
+                  w-4 h-4
+                  bg-white
+                  rounded-full
+                  border
+                  -translate-y-1/2
+                  transition-transform
+                  peer-checked:translate-x-6
+                  md:w-6 md:h-6 md:left-1 md:peer-checked:translate-x-12
+                  dark:bg-gray-200
+                "></div>
+              </label>
+            </div>
           </div>
         ))}
       </div>

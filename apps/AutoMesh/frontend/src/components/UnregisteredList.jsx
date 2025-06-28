@@ -38,22 +38,22 @@ export default function UnregisteredList() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold mb-2">未登録デバイス一覧</h2>
+      <h2 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">未登録デバイス一覧</h2>
       {devices.length === 0 ? (
-        <p className="text-gray-500">現在接続中の未登録デバイスはありません。</p>
+        <p className="text-gray-500 dark:text-gray-300">現在接続中の未登録デバイスはありません。</p>
       ) : (
-        <table className="w-full border mt-2">
+        <table className="w-full border mt-2 bg-white dark:bg-gray-800 dark:border-gray-700">
           <thead>
             <tr>
-              <th className="border p-2">シリアル番号</th>
-              <th className="border p-2">デバイス名</th>
-              <th className="border p-2">操作</th>
+              <th className="border p-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">シリアル番号</th>
+              <th className="border p-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">デバイス名</th>
+              <th className="border p-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">操作</th>
             </tr>
           </thead>
           <tbody>
             {devices.map((d, i) => (
               <tr key={i}>
-                <td className="border p-2">{d.serial_number}</td>
+                <td className="border p-2 text-gray-900 dark:text-gray-100">{d.serial_number}</td>
                 <td className="border p-2">
                   <input
                     type="text"
@@ -62,13 +62,13 @@ export default function UnregisteredList() {
                       setFormValues({ ...formValues, [d.serial_number]: e.target.value })
                     }
                     placeholder="登録名を入力"
-                    className="border px-2 py-1"
+                    className="border px-2 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600 rounded"
                   />
                 </td>
                 <td className="border p-2">
                   <button
                     onClick={() => handleRegister(d.serial_number)}
-                    className="bg-blue-500 text-white px-3 py-1 rounded"
+                    className="bg-blue-500 dark:bg-blue-600 text-white px-3 py-1 rounded"
                   >
                     登録
                   </button>

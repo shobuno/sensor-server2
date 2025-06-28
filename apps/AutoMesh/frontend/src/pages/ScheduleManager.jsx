@@ -152,14 +152,15 @@ export default function ScheduleManager() {
   const relayDevices = selectedGroup?.devices || [];
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl font-bold mb-4">スケジュール管理</h2>
+    <div className="p-6 bg-white dark:bg-gray-900 min-h-screen">
+      <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">スケジュール管理</h2>
 
-      <div className="border p-4 mb-6">
-        <h3 className="font-semibold mb-2">スケジュール追加</h3>
+      <div className="border dark:border-gray-700 p-4 mb-6 bg-white dark:bg-gray-800 rounded">
+        <h3 className="font-semibold mb-2 text-gray-900 dark:text-white">スケジュール追加</h3>
         <div className="flex flex-wrap gap-4 items-center">
-          <label>装置：</label>
+          <label className="text-gray-900 dark:text-gray-200">装置：</label>
           <select
+            className="border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded"
             value={form.serial_number}
             onChange={(e) => setForm({ ...form, serial_number: e.target.value, relay: 1 })}
           >
@@ -170,9 +171,9 @@ export default function ScheduleManager() {
             ))}
           </select>
 
-          <label>曜日：</label>
+          <label className="text-gray-900 dark:text-gray-200">曜日：</label>
           {dayOptions.map((day) => (
-            <label key={day} className="flex items-center">
+            <label key={day} className="flex items-center text-gray-900 dark:text-gray-200">
               <input
                 type="checkbox"
                 checked={form.days.includes(day)}
@@ -182,15 +183,17 @@ export default function ScheduleManager() {
             </label>
           ))}
 
-          <label>時刻：</label>
+          <label className="text-gray-900 dark:text-gray-200">時刻：</label>
           <input
             type="time"
+            className="border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded"
             value={form.time}
             onChange={(e) => setForm({ ...form, time: e.target.value })}
           />
 
-          <label>リレー：</label>
+          <label className="text-gray-900 dark:text-gray-200">リレー：</label>
           <select
+            className="border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded"
             value={form.relay}
             onChange={(e) => setForm({ ...form, relay: Number(e.target.value) })}
           >
@@ -201,8 +204,9 @@ export default function ScheduleManager() {
             ))}
           </select>
 
-          <label>動作：</label>
+          <label className="text-gray-900 dark:text-gray-200">動作：</label>
           <select
+            className="border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded"
             value={form.action}
             onChange={(e) => setForm({ ...form, action: e.target.value })}
           >
@@ -217,58 +221,72 @@ export default function ScheduleManager() {
       </div>
 
       <div>
-        <h3 className="font-semibold mb-2">スケジュール一覧</h3>
-        <table className="w-full text-left border-t">
-          <thead>
-            <tr>
-              <th>状態</th>
-              <th>装置</th>
-              <th>曜日</th>
-              <th>時刻</th>
-              <th>リレー</th>
-              <th>動作</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {schedules.map((s) => {
-              const group = rawDeviceGroups.find((g) => g.serial_number === s.serial_number);
-              const relayName = group?.devices.find((d) => d.relay_index === s.relay)?.name || `リレー${s.relay}`;
-              return (
-                <tr key={s.id} className="border-t">
-                  <td className="py-2">
-                    <label
-                      className={`relative inline-block w-12 h-6 rounded-full cursor-pointer ${
-                        s.enabled ? "bg-green-400" : "bg-gray-400"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={s.enabled}
-                        onChange={() => toggleEnabled(s.id)}
-                        className="sr-only"
-                      />
-                      <span
-                        className={`absolute top-1/2 transform -translate-y-1/2 w-4 h-4 bg-white rounded-full transition-all duration-200 ${
-                          s.enabled ? "translate-x-6" : "translate-x-1"
+        <h3 className="font-semibold mb-2 text-gray-900 dark:text-white">スケジュール一覧</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-t min-w-[600px] bg-white dark:bg-gray-800 dark:border-gray-700">
+            <thead>
+              <tr>
+                <th className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">状態</th>
+                <th className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">装置</th>
+                <th className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">曜日</th>
+                <th className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">時刻</th>
+                <th className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">リレー</th>
+                <th className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">動作</th>
+                <th className="bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {schedules.map((s) => {
+                const group = rawDeviceGroups.find((g) => g.serial_number === s.serial_number);
+                const relayName = group?.devices.find((d) => d.relay_index === s.relay)?.name || `リレー${s.relay}`;
+                return (
+                  <tr key={s.id} className="border-t dark:border-gray-700">
+                    <td className="py-2">
+                      <label
+                        className={`relative inline-block w-12 h-6 rounded-full cursor-pointer ${
+                          s.enabled ? "bg-green-400 dark:bg-green-500" : "bg-gray-400 dark:bg-gray-600"
                         }`}
-                      />
-                    </label>
-                  </td>
-                  <td>{s.serial_number}</td>
-                  <td>{s.days.join(",")}</td>
-                  <td>{s.time}</td>
-                  <td>{relayName}</td>
-                  <td>{s.action}</td>
-                  <td className="flex gap-2 py-1">
-                    <Button onClick={() => handleEdit(s.id)}>編集</Button>
-                    <Button onClick={() => handleDelete(s.id)}>削除</Button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      >
+                        <input
+                          type="checkbox"
+                          checked={s.enabled}
+                          onChange={() => toggleEnabled(s.id)}
+                          className="sr-only"
+                        />
+                        <span
+                          className={`absolute top-1/2 transform -translate-y-1/2 w-4 h-4 bg-white dark:bg-gray-200 rounded-full transition-all duration-200 ${
+                            s.enabled ? "translate-x-6" : "translate-x-1"
+                          }`}
+                        />
+                      </label>
+                    </td>
+                    <td className="text-gray-900 dark:text-gray-100">{s.serial_number}</td>
+                    <td className="text-gray-900 dark:text-gray-100">{s.days.join(",")}</td>
+                    <td className="text-gray-900 dark:text-gray-100">{s.time}</td>
+                    <td className="text-gray-900 dark:text-gray-100">{relayName}</td>
+                    <td className="text-gray-900 dark:text-gray-100">{s.action}</td>
+                    <td className="flex gap-1 sm:gap-2 py-1">
+                      <Button
+                        className="text-xs sm:text-base px-2 sm:px-4 py-1 sm:py-2 bg-blue-400 dark:bg-blue-600 text-white"
+                        onClick={() => handleEdit(s.id)}
+                      >
+                        <span className="inline sm:hidden">編</span>
+                        <span className="hidden sm:inline">編集</span>
+                      </Button>
+                      <Button
+                        className="text-xs sm:text-base px-2 sm:px-4 py-1 sm:py-2 bg-red-400 dark:bg-red-600 text-white"
+                        onClick={() => handleDelete(s.id)}
+                      >
+                        <span className="inline sm:hidden">削</span>
+                        <span className="hidden sm:inline">削除</span>
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
