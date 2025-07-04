@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+  server:
+    build: .
+    container_name: hydrosense-server
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    env_file:
+      - .env.docker   # 👈 外部から読み込む（Macと分けて管理）
+    volumes:
+      - .:/app
+    restart: always
+
+  db:
+    image: postgres:15
+    container_name: hydrosense-db
+    restart: always
+    env_file:
+      - .env.docker   # 👈 DB側も同じファイルでOK
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: hydrosense-tunnel
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}   # 👈 こちらも.env.dockerから読み込む
+    restart: unless-stopped
+
+volumes:
+  db-data:

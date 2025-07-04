@@ -1,2 +1,5 @@
-.env
-.env
+# Ignore environment files
+.env*
+*.log
+node_modules
+dist
