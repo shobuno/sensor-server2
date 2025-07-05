@@ -190,7 +190,7 @@ export default function GraphDisplay() {
               <XAxis
                 dataKey="timestamp"
                 tickFormatter={(time) =>
-                  dayjs.utc(time).tz("Asia/Tokyo").format("HH:mm")
+                  dayjs.utc(time).format("HH:mm")
                 }
                 tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
               />
@@ -230,7 +230,7 @@ export default function GraphDisplay() {
               <XAxis
                 dataKey="timestamp"
                 tickFormatter={(time) =>
-                  dayjs.utc(time).tz("Asia/Tokyo").format("HH:mm")
+                  dayjs.utc(time).format("HH:mm")
                 }
                 tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
               />

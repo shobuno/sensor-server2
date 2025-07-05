@@ -235,7 +235,7 @@ export default function LatestData() {
               )}
 
               <p className="text-sm text-right text-gray-400 mt-6">
-                更新: {dayjs.utc(data.timestamp).tz("Asia/Tokyo").format("YYYY/MM/DD HH:mm:ss")}
+                更新: {dayjs.utc(data.timestamp).format("YYYY/MM/DD HH:mm:ss")}
               </p>
             </>
           ) : (
@@ -258,7 +258,7 @@ export default function LatestData() {
                       dataKey="timestamp"
                       domain={["auto", "auto"]}
                       tickFormatter={(time) =>
-                        dayjs.utc(time).tz("Asia/Tokyo").format("HH:mm")
+                        dayjs.utc(time).format("HH:mm")
                       }
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }} // ここで色を切り替え
                     />
@@ -274,7 +274,7 @@ export default function LatestData() {
                         border: '1px solid #444'
                       }}
                       labelFormatter={(value) =>
-                        dayjs.utc(value).tz("Asia/Tokyo").format("YYYY-MM-DD HH:mm")
+                        dayjs.utc(value).format("YYYY-MM-DD HH:mm")
                       }
                       labelStyle={{
                         color: isDark ? '#fff' : '#222'
@@ -340,7 +340,7 @@ export default function LatestData() {
                         color: isDark ? '#fff' : '#222'
                       }}
                       labelFormatter={(value) =>
-                        dayjs.utc(value).tz("Asia/Tokyo").format("YYYY-MM-DD HH:mm")
+                        dayjs.utc(value).format("YYYY-MM-DD HH:mm")
                       }
                     />
                     <Legend verticalAlign="top" align="right" />
