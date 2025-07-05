@@ -235,7 +235,7 @@ export default function LatestData() {
               )}
 
               <p className="text-sm text-right text-gray-400 mt-6">
-                更新: {dayjs.utc(data.timestamp).tz('Asia/Tokyo').format("YYYY/MM/DD HH:mm:ss")}
+                更新: {dayjs(data.timestamp).tz('Asia/Tokyo').format("YYYY/MM/DD HH:mm:ss")}
               </p>
             </>
           ) : (
