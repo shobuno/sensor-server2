@@ -339,6 +339,9 @@ export default function LatestData() {
                       labelStyle={{
                         color: isDark ? '#fff' : '#222'
                       }}
+                      labelFormatter={(value) =>
+                        dayjs.utc(value).tz("Asia/Tokyo").format("YYYY-MM-DD HH:mm")
+                      }
                     />
                     <Legend verticalAlign="top" align="right" />
                     <Area

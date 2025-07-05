@@ -81,8 +81,16 @@ router.get('/', async (req, res) => {
     const k1Row = k1Res.rows[0];
     const model = modelRes.rows[0];
 
+    const airTimestamp = airRes.rows[0]?.timestamp;
+    const jstTimestamp = airTimestamp
+      ? new Date(airTimestamp.getTime() + 9 * 60 * 60 * 1000)
+          .toISOString()
+          .replace('Z', '+09:00')
+      : null;
+
+
     res.status(200).json({
-      timestamp: airRes.rows[0]?.timestamp ?? null,
+      timestamp: jstTimestamp,
       temperature: airRes.rows[0]?.temperature ?? null,
       water_temperature: waterRes.rows[0]?.temperature ?? null,
       ec: ecAnalog,
