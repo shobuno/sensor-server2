@@ -84,9 +84,7 @@ export default function GraphDisplay() {
       const json = await res.json();
       const formatted = json.map((d) => ({
         ...d,
-        timestamp: new Date(d.timestamp).toLocaleTimeString('ja-JP', {
-          year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-        }),
+        timestamp: dayjs.tz(d.timestamp, 'Asia/Tokyo').toDate(), // JSTのDateオブジェクトに変換
       }));
       setter(formatted);
     } catch (err) {
@@ -190,7 +188,7 @@ export default function GraphDisplay() {
               <XAxis
                 dataKey="timestamp"
                 tickFormatter={(time) =>
-                  dayjs.utc(time).format("HH:mm")
+                  dayjs(time).format("MM/DD HH:mm")
                 }
                 tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
               />
@@ -230,7 +228,7 @@ export default function GraphDisplay() {
               <XAxis
                 dataKey="timestamp"
                 tickFormatter={(time) =>
-                  dayjs.utc(time).format("HH:mm")
+                  dayjs(time).format("MM/DD HH:mm")
                 }
                 tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
               />
