@@ -20,6 +20,8 @@ services:
     restart: always
     env_file:
       - .env.docker
+    environment:
+      - TZ=Asia/Tokyo
     ports:
       - "5432:5432"
     volumes:
