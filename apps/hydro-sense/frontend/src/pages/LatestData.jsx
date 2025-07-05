@@ -127,6 +127,15 @@ export default function LatestData() {
     };
   }, []);
 
+  useEffect(() => {
+  if (data && data.timestamp) {
+    console.log("🕒 data.timestamp:", data.timestamp);
+    console.log("🕒 as dayjs (default):", dayjs(data.timestamp).format());
+    console.log("🕒 as JST:", dayjs(data.timestamp).tz('Asia/Tokyo').format());
+  }
+}, [data]);
+
+
   return (
     <div className="bg-white dark:bg-gray-900 w-full min-h-screen text-gray-900 dark:text-white px-2 sm:px-4 py-6 flex flex-col">
       <div className="w-full flex flex-col md:flex-row gap-6 flex-grow">
