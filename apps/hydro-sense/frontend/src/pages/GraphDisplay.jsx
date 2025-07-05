@@ -1,9 +1,17 @@
+// HydroSense/frontend/src/pages/GraphDisplay.jsx
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, Legend,
   ResponsiveContainer, Area, AreaChart
 } from 'recharts';
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 const apiBase = import.meta.env.VITE_API_BASE_URL;
 const AVG_GRAPH_OPTIONS = [
@@ -179,7 +187,13 @@ export default function GraphDisplay() {
         <div className="bg-white dark:bg-gray-800 pt-0 pr-4 pb-4 pl-4 rounded-xl shadow-xl flex-1 min-h-0">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={dataAvg} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
-              <XAxis dataKey="timestamp" />
+              <XAxis
+                dataKey="timestamp"
+                tickFormatter={(time) =>
+                  dayjs.utc(time).tz("Asia/Tokyo").format("HH:mm")
+                }
+                tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
+              />
               <YAxis domain={['auto', 'auto']} width={50} />
               <Tooltip
                 contentStyle={{
@@ -213,7 +227,13 @@ export default function GraphDisplay() {
         <div className="bg-white dark:bg-gray-800 pt-0 pr-4 pb-4 pl-4 rounded-xl shadow-xl flex-1 min-h-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={dataAll} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
-              <XAxis dataKey="timestamp" />
+              <XAxis
+                dataKey="timestamp"
+                tickFormatter={(time) =>
+                  dayjs.utc(time).tz("Asia/Tokyo").format("HH:mm")
+                }
+                tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
+              />
               <YAxis domain={['auto', 'auto']} width={50} />
               <Tooltip
                 contentStyle={{
