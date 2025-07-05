@@ -9,6 +9,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Area, AreaChart
 } from 'recharts';
 
+
 // 必ず拡張する必要があります
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -244,7 +245,7 @@ export default function LatestData() {
               )}
 
               <p className="text-sm text-right text-gray-400 mt-6">
-                更新: {dayjs(data.timestamp).tz('Asia/Tokyo').format("YYYY/MM/DD HH:mm:ss")}
+                更新: {dayjs.tz(data.timestamp, 'Asia/Tokyo').format("YYYY/MM/DD HH:mm:ss")}
               </p>
             </>
           ) : (
