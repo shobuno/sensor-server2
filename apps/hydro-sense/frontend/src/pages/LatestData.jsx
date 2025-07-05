@@ -317,10 +317,7 @@ export default function LatestData() {
                       dataKey="timestamp"
                       domain={["auto", "auto"]}
                       tickFormatter={(time) =>
-                        new Date(time).toLocaleTimeString("ja-JP", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
+                        dayjs.utc(time).format("HH:mm")
                       }
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
                     />
