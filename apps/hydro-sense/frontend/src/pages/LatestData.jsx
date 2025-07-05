@@ -45,6 +45,14 @@ export default function LatestData() {
     }
   };
 
+  // データ取得後の変換処理の例
+  const convertTimestamps = (data) => {
+    return data.map((item) => ({
+      ...item,
+      timestamp: new Date(item.timestamp).getTime(), // ← ここが重要
+    }));
+  };
+
   const fetchGraphData = async () => {
     try {
       const apiBase = import.meta.env.VITE_API_BASE_URL;
@@ -55,23 +63,13 @@ export default function LatestData() {
 
       const json = await res.json();
 
-      const formatted = json.map(d => ({
-        ...d,
-        timestamp: new Date(d.timestamp).toLocaleString('ja-JP', {
-          year: '2-digit',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        air_avg: d.air_avg,
-        water_avg: d.water_avg,
-        ec_corrected: d.ec_corrected
+      // ✅ timestampをUNIXミリ秒に変換
+      const converted = json.map((item) => ({
+        ...item,
+        timestamp: new Date(item.timestamp).getTime(),
       }));
 
-      formatted.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-      setGraphData(formatted);
+      setGraphData(converted); // ← setするのは変換後のデータ
     } catch (err) {
       console.error('🔥 グラフデータ取得エラー:', err);
     }
@@ -258,10 +256,14 @@ export default function LatestData() {
                             margin={{ top: 10, right: 10, left: 0, bottom: 10 }}> {/* marginを小さく */}
                     <XAxis
                       dataKey="timestamp"
-                      tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }} // ここで色を切り替え
-                      tickFormatter={(value) =>
-                        dayjs.utc(value).tz("Asia/Tokyo").format("HH:mm") // JST変換
+                      domain={["auto", "auto"]}
+                      tickFormatter={(time) =>
+                        new Date(time).toLocaleTimeString("ja-JP", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
                       }
+                      tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }} // ここで色を切り替え
                     />
                     <YAxis
                       domain={['auto', 'auto']}
@@ -316,8 +318,12 @@ export default function LatestData() {
                             margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
                     <XAxis
                       dataKey="timestamp"
-                      tickFormatter={(value) =>
-                        dayjs.utc(value).tz("Asia/Tokyo").format("HH:mm") // JST変換
+                      domain={["auto", "auto"]}
+                      tickFormatter={(time) =>
+                        new Date(time).toLocaleTimeString("ja-JP", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
                       }
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
                     />
