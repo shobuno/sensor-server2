@@ -1,3 +1,5 @@
+// hydro-sense/backend/routes/latestData.js
+
 // 最新の気温、水温、EC値、水位を取得するAPI
 // このAPIは、最新のセンサーデータを取得し、EC値の補正も行います。
 // 取得したデータは、フロントエンドで表示するために使用されます。
@@ -82,10 +84,13 @@ router.get('/', async (req, res) => {
     const model = modelRes.rows[0];
 
     const airTimestamp = airRes.rows[0]?.timestamp;
+    // const jstTimestamp = airTimestamp
+    //  ? airTimestamp.toISOString().replace('Z', '+09:00')
+    //  : null;
     const jstTimestamp = airTimestamp
-      ? airTimestamp.toISOString().replace('Z', '+09:00')
+      ? airTimestamp.toISOString() // ← Zそのまま残す
       : null;
-      
+
     if (!airTimestamp) {
       return res.status(404).json({ error: '最新の気温データが見つかりません' });
     }
