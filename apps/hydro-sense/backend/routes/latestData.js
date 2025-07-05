@@ -83,10 +83,12 @@ router.get('/', async (req, res) => {
 
     const airTimestamp = airRes.rows[0]?.timestamp;
     const jstTimestamp = airTimestamp
-      ? new Date(airTimestamp.getTime() + 9 * 60 * 60 * 1000)
-          .toISOString()
-          .replace('Z', '+09:00')
+      ? airTimestamp.toISOString().replace('Z', '+09:00')
       : null;
+      
+    if (!airTimestamp) {
+      return res.status(404).json({ error: '最新の気温データが見つかりません' });
+    }
 
 
     res.status(200).json({
