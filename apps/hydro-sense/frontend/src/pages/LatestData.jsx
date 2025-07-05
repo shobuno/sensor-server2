@@ -1,11 +1,17 @@
 // apps/hydro-sense/frontend/src/pages/LatestData.jsx
 
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Area, AreaChart
 } from 'recharts';
 
+// 必ず拡張する必要があります
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export default function LatestData() {
 
@@ -231,7 +237,7 @@ export default function LatestData() {
               )}
 
               <p className="text-sm text-right text-gray-400 mt-6">
-                更新: {data.timestamp ? new Date(data.timestamp).toLocaleString() : '--'}
+                更新: {dayjs.utc(data.timestamp).tz("Asia/Tokyo").format("YYYY/MM/DD HH:mm:ss")}
               </p>
             </>
           ) : (
@@ -253,6 +259,9 @@ export default function LatestData() {
                     <XAxis
                       dataKey="timestamp"
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }} // ここで色を切り替え
+                      tickFormatter={(value) =>
+                        dayjs.utc(value).tz("Asia/Tokyo").format("HH:mm") // JST変換
+                      }
                     />
                     <YAxis
                       domain={['auto', 'auto']}
@@ -265,6 +274,9 @@ export default function LatestData() {
                         color: isDark ? '#fff' : '#222',
                         border: '1px solid #444'
                       }}
+                      labelFormatter={(value) =>
+                        dayjs.utc(value).tz("Asia/Tokyo").format("YYYY-MM-DD HH:mm")
+                      }
                       labelStyle={{
                         color: isDark ? '#fff' : '#222'
                       }}
@@ -304,6 +316,9 @@ export default function LatestData() {
                             margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
                     <XAxis
                       dataKey="timestamp"
+                      tickFormatter={(value) =>
+                        dayjs.utc(value).tz("Asia/Tokyo").format("HH:mm") // JST変換
+                      }
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
                     />
                     <YAxis
