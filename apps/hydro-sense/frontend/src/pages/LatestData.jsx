@@ -278,15 +278,7 @@ export default function LatestData() {
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
                     />
                     <Tooltip
-                      labelFormatter={(value) => dayjs(value).format("YYYY/MM/DD HH:mm")}
-                      contentStyle={{
-                        backgroundColor: isDark ? '#222' : '#fff',
-                        color: isDark ? '#fff' : '#222',
-                        border: '1px solid #444'
-                      }}
-                      labelStyle={{
-                        color: isDark ? '#fff' : '#222'
-                      }}
+                      content={<CustomTooltip isDark={isDark} />}
                     />
                     <Legend verticalAlign="top" align="right" />
                     {/* 気温の塗りつぶし */}
@@ -366,3 +358,29 @@ export default function LatestData() {
     </div>
   );
 }
+
+// ファイル内で
+const CustomTooltip = ({ active, payload, label, isDark }) => {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div
+      style={{
+        backgroundColor: isDark ? '#222' : '#fff',
+        color: isDark ? '#fff' : '#222',
+        border: '1px solid #444',
+        padding: 8,
+        borderRadius: 8,
+        fontSize: 14,
+      }}
+    >
+      <div style={{ color: isDark ? '#fff' : '#222', marginBottom: 4 }}>
+        {dayjs(label).tz("Asia/Tokyo").format("YYYY/MM/DD HH:mm")}
+      </div>
+      {payload.map((entry, i) => (
+        <div key={i} style={{ color: entry.color }}>
+          {entry.name}: {entry.value}
+        </div>
+      ))}
+    </div>
+  );
+};
