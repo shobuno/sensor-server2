@@ -278,14 +278,12 @@ export default function LatestData() {
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
                     />
                     <Tooltip
+                      labelFormatter={(value) => dayjs(value).format("YYYY/MM/DD HH:mm")}
                       contentStyle={{
                         backgroundColor: isDark ? '#222' : '#fff',
                         color: isDark ? '#fff' : '#222',
                         border: '1px solid #444'
                       }}
-                      labelFormatter={(value) =>
-                        dayjs.utc(value).format("YYYY-MM-DD HH:mm")
-                      }
                       labelStyle={{
                         color: isDark ? '#fff' : '#222'
                       }}
@@ -338,6 +336,7 @@ export default function LatestData() {
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
                     />
                     <Tooltip
+                      labelFormatter={(value) => dayjs(value).format("YYYY/MM/DD HH:mm")}
                       contentStyle={{
                         backgroundColor: isDark ? '#222' : '#fff',
                         color: isDark ? '#fff' : '#222',
@@ -346,9 +345,6 @@ export default function LatestData() {
                       labelStyle={{
                         color: isDark ? '#fff' : '#222'
                       }}
-                      labelFormatter={(value) =>
-                        dayjs.utc(value).format("YYYY-MM-DD HH:mm")
-                      }
                     />
                     <Legend verticalAlign="top" align="right" />
                     <Area
