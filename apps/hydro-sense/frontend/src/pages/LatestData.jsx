@@ -245,7 +245,7 @@ export default function LatestData() {
               )}
 
               <p className="text-sm text-right text-gray-400 mt-6">
-                更新: {dayjs.tz(data.timestamp, 'Asia/Tokyo').format("YYYY/MM/DD HH:mm:ss")}
+                更新: {dayjs(data.timestamp).format("YYYY/MM/DD HH:mm:ss")}
               </p>
             </>
           ) : (
@@ -268,7 +268,7 @@ export default function LatestData() {
                       dataKey="timestamp"
                       domain={["auto", "auto"]}
                       tickFormatter={(time) =>
-                        dayjs.utc(time).format("HH:mm")
+                        dayjs(time).format("HH:mm")
                       }
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }} // ここで色を切り替え
                     />
@@ -327,7 +327,7 @@ export default function LatestData() {
                       dataKey="timestamp"
                       domain={["auto", "auto"]}
                       tickFormatter={(time) =>
-                        dayjs.utc(time).format("HH:mm")
+                        dayjs(time).format("HH:mm")
                       }
                       tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
                     />

@@ -84,7 +84,7 @@ export default function GraphDisplay() {
       const json = await res.json();
       const formatted = json.map((d) => ({
         ...d,
-        timestamp: dayjs.tz(d.timestamp, 'Asia/Tokyo').toDate(), // JSTのDateオブジェクトに変換
+        timestamp: dayjs(d.timestamp).toDate(), // JSTそのままで処理
       }));
       setter(formatted);
     } catch (err) {
@@ -187,6 +187,7 @@ export default function GraphDisplay() {
             <AreaChart data={dataAvg} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
               <XAxis
                 dataKey="timestamp"
+                scale="point" 
                 tickFormatter={(time) =>
                   dayjs(time).format("MM/DD HH:mm")
                 }
@@ -194,6 +195,7 @@ export default function GraphDisplay() {
               />
               <YAxis domain={['auto', 'auto']} width={50} />
               <Tooltip
+                labelFormatter={(value) => dayjs(value).format("YYYY/MM/DD HH:mm")}
                 contentStyle={{
                   backgroundColor: isDark ? '#222' : '#fff',
                   color: isDark ? '#fff' : '#222',
@@ -227,6 +229,7 @@ export default function GraphDisplay() {
             <LineChart data={dataAll} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
               <XAxis
                 dataKey="timestamp"
+                scale="point" 
                 tickFormatter={(time) =>
                   dayjs(time).format("MM/DD HH:mm")
                 }
@@ -234,6 +237,7 @@ export default function GraphDisplay() {
               />
               <YAxis domain={['auto', 'auto']} width={50} />
               <Tooltip
+                labelFormatter={(value) => dayjs(value).format("YYYY/MM/DD HH:mm")}
                 contentStyle={{
                   backgroundColor: isDark ? '#222' : '#fff',
                   color: isDark ? '#fff' : '#222',
