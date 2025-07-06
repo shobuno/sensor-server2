@@ -1,6 +1,10 @@
 # ベースイメージ
 FROM node:18
 
+# タイムゾーンをJSTに設定
+ENV TZ=Asia/Tokyo
+RUN ln -snf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime && echo Asia/Tokyo > /etc/timezone
+
 # 作業ディレクトリ作成
 WORKDIR /app
 
@@ -16,3 +20,4 @@ EXPOSE 3000
 
 # サーバー起動
 CMD ["node", "server.js"]
+
