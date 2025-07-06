@@ -11,6 +11,10 @@ const {
 
 router.post('/', async (req, res) => {
   try {
+
+    const { sensors, ecAnalogValue } = req.body;
+    const timestamp = new Date();
+
     console.log('📥 登録データ内容:', {
       timestamp,
       sensor1,
@@ -19,10 +23,7 @@ router.post('/', async (req, res) => {
       type2,
       ecAnalogValue
     });
-
-    const { sensors, ecAnalogValue } = req.body;
-    const timestamp = new Date();
-
+    
     if (!Array.isArray(sensors) || typeof ecAnalogValue !== 'number') {
       console.warn('❌ 無効なペイロード形式:', req.body);
       return res.status(400).json({ error: 'Invalid payload format' });
