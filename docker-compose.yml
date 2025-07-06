@@ -21,7 +21,10 @@ services:
     env_file:
       - .env.docker
     environment:
-      - TZ=Asia/Tokyo
+      POSTGRES_USER: nobu                # ✅ 必須（明示）
+      POSTGRES_PASSWORD: 13005tak        # ✅ 必須（.env.dockerで上書きもOK）
+      POSTGRES_DB: sensor_data           # ✅ 初期DB名（任意）
+      TZ: Asia/Tokyo                     # ✅ タイムゾーン
     ports:
       - "5432:5432"
     volumes:
@@ -33,7 +36,7 @@ services:
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN}
-    restart: "no"  # ← 本番まで起動しないように一時的に無効化
+    restart: "no"
 
 volumes:
   db-data:
