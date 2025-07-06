@@ -11,6 +11,15 @@ const {
 
 router.post('/', async (req, res) => {
   try {
+    console.log('📥 登録データ内容:', {
+      timestamp,
+      sensor1,
+      type1,
+      sensor2,
+      type2,
+      ecAnalogValue
+    });
+
     const { sensors, ecAnalogValue } = req.body;
     const timestamp = new Date();
 
