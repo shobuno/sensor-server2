@@ -15,15 +15,6 @@ router.post('/', async (req, res) => {
     const { sensors, ecAnalogValue } = req.body;
     const timestamp = new Date();
 
-    console.log('📥 登録データ内容:', {
-      timestamp,
-      sensor1,
-      type1,
-      sensor2,
-      type2,
-      ecAnalogValue
-    });
-
     if (!Array.isArray(sensors) || typeof ecAnalogValue !== 'number') {
       console.warn('❌ 無効なペイロード形式:', req.body);
       return res.status(400).json({ error: 'Invalid payload format' });
@@ -35,7 +26,7 @@ router.post('/', async (req, res) => {
     }
 
     const [sensor1, sensor2] = sensors;
-    
+
     // センサータイプを取得
     const result1 = await db.query(
       'SELECT sensor_type FROM sensor_master WHERE serial_number = $1',
@@ -63,6 +54,15 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'ecAnalogValueが異常のため、登録をスキップします' });
     }
 
+    console.log('📥 登録データ内容:', {
+      timestamp,
+      sensor1,
+      type1,
+      sensor2,
+      type2,
+      ecAnalogValue
+    });
+    
     // 正しいsensor_typeに応じてec_rawを付与（もう一方はNULL）
     if (type1 === 'water' && type2 === 'air') {
       await db.query(
