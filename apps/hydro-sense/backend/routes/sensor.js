@@ -23,7 +23,7 @@ router.post('/', async (req, res) => {
       type2,
       ecAnalogValue
     });
-    
+
     if (!Array.isArray(sensors) || typeof ecAnalogValue !== 'number') {
       console.warn('❌ 無効なペイロード形式:', req.body);
       return res.status(400).json({ error: 'Invalid payload format' });
@@ -35,7 +35,7 @@ router.post('/', async (req, res) => {
     }
 
     const [sensor1, sensor2] = sensors;
-
+    
     // センサータイプを取得
     const result1 = await db.query(
       'SELECT sensor_type FROM sensor_master WHERE serial_number = $1',
