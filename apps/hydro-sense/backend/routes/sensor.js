@@ -17,12 +17,12 @@ router.post('/', async (req, res) => {
     const timestamp = new Date();
 
     if (!Array.isArray(sensors) || typeof ecAnalogValue !== 'number') {
-      console.warn('[${new Date().toLocaleString()}]❌ 無効なペイロード形式:', req.body);
+      console.warn(`[${new Date().toLocaleString()}]❌ 無効なペイロード形式:`, req.body);
       return res.status(400).json({ error: 'Invalid payload format' });
     }
 
     if (sensors.length !== 2) {
-      console.warn('[${new Date().toLocaleString()}]❌ sensors の数が不足しています:', sensors);
+      console.warn(`[${new Date().toLocaleString()}]❌ sensors の数が不足しています:`, sensors);
       return res.status(400).json({ error: 'sensorsは2つのセンサー情報を含めてください' });
     }
 
@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
     const type2 = result2.rows[0]?.sensor_type;
 
     if (!type1 || !type2) {
-      console.warn('[${new Date().toLocaleString()}]❌ sensor_master に未登録のセンサーがあります:', {
+      console.warn(`[${new Date().toLocaleString()}]❌ sensor_master に未登録のセンサーがあります:`, {
         sensor1: sensor1.serial, type1,
         sensor2: sensor2.serial, type2
       });
@@ -51,7 +51,7 @@ router.post('/', async (req, res) => {
 
     // EC値が異常値であればスキップ
     if (ecAnalogValue > 3000) {
-      console.warn('[${new Date().toLocaleString()}]❌ ecAnalogValue が異常値:', {
+      console.warn(`[${new Date().toLocaleString()}]❌ ecAnalogValue が異常値:`, {
         ecAnalogValue: ecAnalogValue,
         sensor1: sensor1.value, type1,
         sensor2: sensor2.value, type2
