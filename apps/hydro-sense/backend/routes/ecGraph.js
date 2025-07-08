@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
     }
     if (viewKey === '1h') {
       if (rangeKey === '1d') return "NOW() - INTERVAL '2 days'";
-      if (rangeKey === '1w') return "NOW() - INTERVAL '10 days'";
+      if (rangeKey === '1w') return "NOW() - INTERVAL '7 days'";
       if (rangeKey === '1m') return "NOW() - INTERVAL '1 month'";
     }
     if (viewKey === 'daily') {
