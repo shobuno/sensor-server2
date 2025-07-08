@@ -7,44 +7,48 @@ const db = require(path.resolve(__dirname, '../config/db'));
 router.get('/', async (req, res) => {
   const { type, range, view: overrideView } = req.query;
 
-  let view;
-  let intervalCondition = "";
-
-  // 💡 range による interval 条件は必ず必要
-  switch (range) {
-    case '1d':
-      view = 'v_ec_corrected_10m';
-      intervalCondition = "timestamp >= NOW() - INTERVAL '1 day'";
-      break;
-    case '1w':
-      view = 'v_ec_corrected_1h';
-      intervalCondition = "timestamp >= NOW() - INTERVAL '7 days'";
-      break;
-    case '1m':
-      view = 'v_ec_corrected_1h';
-      intervalCondition = "timestamp >= NOW() - INTERVAL '1 month'";
-      break;
-    case '6m':
-      view = 'v_ec_corrected_daily';
-      intervalCondition = "timestamp >= NOW() - INTERVAL '6 months'";
-      break;
-    case '1y':
-      view = 'v_ec_corrected_daily';
-      intervalCondition = "timestamp >= NOW() - INTERVAL '1 year'";
-      break;
-    case '2y':
-      view = 'v_ec_corrected_monthly';
-      intervalCondition = "timestamp >= NOW() - INTERVAL '2 years'";
-      break;
-    default:
-      return res.status(400).json({ error: '無効なrange指定です' });
-  }
-
-  // ✅ view指定（例: 10m, 1h, daily, monthly）があれば、view名を上書き
+  // 使用可能なビューキー（安全なバリデーション）
   const validViewKeys = ['10m', '1h', 'daily', 'monthly'];
-  if (overrideView && validViewKeys.includes(overrideView)) {
-    view = `v_ec_corrected_${overrideView}`;
+
+  // range の妥当性チェック
+  const validRanges = ['1d', '1w', '1m', '6m', '1y', '2y'];
+  if (!validRanges.includes(range)) {
+    return res.status(400).json({ error: '無効なrange指定です' });
   }
+
+  // 🔧 表示ビューの決定（view 指定がなければ range に応じてデフォルトを使う）
+  const effectiveView = overrideView && validViewKeys.includes(overrideView)
+    ? overrideView
+    : (
+        range === '1d' ? '10m' :
+        (range === '1w' || range === '1m') ? '1h' :
+        (range === '6m' || range === '1y') ? 'daily' :
+        'monthly'
+      );
+
+  const view = `v_ec_corrected_${effectiveView}`;
+
+  // 🔧 intervalCondition はビューの粒度に応じて調整
+  function getIntervalByView(viewKey, rangeKey) {
+    if (viewKey === '10m') {
+      if (rangeKey === '1d') return "NOW() - INTERVAL '1 day'";
+      if (rangeKey === '1w') return "NOW() - INTERVAL '7 days'";
+    }
+    if (viewKey === '1h') {
+      if (rangeKey === '1d') return "NOW() - INTERVAL '2 days'";
+      if (rangeKey === '1w') return "NOW() - INTERVAL '10 days'";
+      if (rangeKey === '1m') return "NOW() - INTERVAL '1 month'";
+    }
+    if (viewKey === 'daily') {
+      return "NOW() - INTERVAL '2 months'";
+    }
+    if (viewKey === 'monthly') {
+      return "NOW() - INTERVAL '2 years'";
+    }
+    return "NOW() - INTERVAL '1 day'"; // fallback
+  }
+
+  const intervalCondition = `timestamp >= ${getIntervalByView(effectiveView, range)}`;
 
   const query = `
     SELECT *
