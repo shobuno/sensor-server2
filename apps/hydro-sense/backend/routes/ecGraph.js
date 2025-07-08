@@ -5,14 +5,12 @@ const path = require('path');
 const db = require(path.resolve(__dirname, '../config/db'));
 
 router.get('/', async (req, res) => {
-  const { type, range } = req.query;
-  
-  // console.log("✅ /api/ec-graph accessed", req.query);  // ← 追加
-
+  const { type, range, view: overrideView } = req.query;
 
   let view;
   let intervalCondition = "";
 
+  // 💡 range による interval 条件は必ず必要
   switch (range) {
     case '1d':
       view = 'v_ec_corrected_10m';
@@ -40,6 +38,12 @@ router.get('/', async (req, res) => {
       break;
     default:
       return res.status(400).json({ error: '無効なrange指定です' });
+  }
+
+  // ✅ view指定（例: 10m, 1h, daily, monthly）があれば、view名を上書き
+  const validViewKeys = ['10m', '1h', 'daily', 'monthly'];
+  if (overrideView && validViewKeys.includes(overrideView)) {
+    view = `v_ec_corrected_${overrideView}`;
   }
 
   const query = `

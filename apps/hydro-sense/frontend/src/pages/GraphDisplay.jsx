@@ -35,6 +35,13 @@ const RANGE_OPTIONS = [
   { key: '2y', label: '2年' },
 ];
 
+const VIEW_OPTIONS = [
+  { key: '10m', label: '10分' },
+  { key: '1h', label: '1時間' },
+  { key: 'daily', label: '日次' },
+  { key: 'monthly', label: '月次' },
+];
+
 function useDarkMode() {
   const getIsDark = () =>
     document.documentElement.classList.contains('dark') ||
@@ -66,6 +73,7 @@ export default function GraphDisplay() {
   const [graphTypeAll, setGraphTypeAll] = useState(() => localStorage.getItem('graphTypeAll') || 'air_all');
   const [rangeAvg, setRangeAvg] = useState(() => localStorage.getItem('graphRangeAvg') || '1d');
   const [rangeAll, setRangeAll] = useState(() => localStorage.getItem('graphRangeAll') || '1d');
+  const [viewAll, setViewAll] = useState(() => localStorage.getItem('graphViewAll') || '10m');
   const [dataAvg, setDataAvg] = useState([]);
   const [dataAll, setDataAll] = useState([]);
   const navigate = useNavigate();
@@ -76,11 +84,13 @@ export default function GraphDisplay() {
     localStorage.setItem('graphTypeAll', graphTypeAll);
     localStorage.setItem('graphRangeAvg', rangeAvg);
     localStorage.setItem('graphRangeAll', rangeAll);
-  }, [graphTypeAvg, graphTypeAll, rangeAvg, rangeAll]);
+    localStorage.setItem('graphViewAll', viewAll);
+  }, [graphTypeAvg, graphTypeAll, rangeAvg, rangeAll, viewAll]);
 
-  const fetchData = async (type, range, setter) => {
+  const fetchData = async (type, range, setter, view = null) => {
     try {
-      const res = await fetch(`/api/ec-graph?type=${type}&range=${range}`);
+      const viewParam = view ? `&view=${view}` : '';
+      const res = await fetch(`/api/ec-graph?type=${type}&range=${range}${viewParam}`);
       if (!res.ok) throw new Error(`失敗: ${res.status}`);
       const json = await res.json();
       const formatted = json.map((d) => ({
@@ -99,8 +109,8 @@ export default function GraphDisplay() {
   }, [graphTypeAvg, rangeAvg]);
 
   useEffect(() => {
-    fetchData(graphTypeAll, rangeAll, setDataAll);
-  }, [graphTypeAll, rangeAll]);
+    fetchData(graphTypeAll, rangeAll, setDataAll, viewAll);
+  }, [graphTypeAll, rangeAll, viewAll]);
 
   const renderAreaLine = (key, label, color) => [
     <Area key={`${key}_area`} type="monotone" dataKey={key} stroke={color} fill={color} fillOpacity={0.25} dot={false} name={label} />,
@@ -157,7 +167,7 @@ export default function GraphDisplay() {
         />
       </div>
 
-      {/* 平均値グラフ 選択 */}
+      {/* 上段グラフ設定 */}
       <div className="flex items-end gap-2 mb-2 px-0">
         <select
           value={graphTypeAvg}
@@ -180,13 +190,13 @@ export default function GraphDisplay() {
       </div>
 
       <div className="flex flex-col h-[calc(100vh-140px)] gap-4">
-        {/* 平均値グラフ */}
+        {/* 上段グラフ */}
         <div className="bg-white dark:bg-gray-800 pt-0 pr-4 pb-4 pl-4 rounded-xl shadow-xl flex-1 min-h-0">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={dataAvg} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
               <XAxis
                 dataKey="timestamp"
-                scale="point" 
+                scale="point"
                 tickFormatter={(time) =>
                   dayjs(time).format("MM/DD HH:mm")
                 }
@@ -210,7 +220,7 @@ export default function GraphDisplay() {
           </ResponsiveContainer>
         </div>
 
-        {/* 最大・最小・平均 選択 */}
+        {/* 下段グラフ設定 */}
         <div className="flex items-end gap-2 mb-2 px-0">
           <select
             value={graphTypeAll}
@@ -222,23 +232,23 @@ export default function GraphDisplay() {
             ))}
           </select>
           <select
-            value={rangeAll}
-            onChange={(e) => setRangeAll(e.target.value)}
+            value={viewAll}
+            onChange={(e) => setViewAll(e.target.value)}
             className="p-2 rounded bg-gray-800 text-white"
           >
-            {RANGE_OPTIONS.map(opt => (
+            {VIEW_OPTIONS.map(opt => (
               <option key={opt.key} value={opt.key}>{opt.label}</option>
             ))}
           </select>
         </div>
 
-        {/* 最大・最小・平均グラフ */}
+        {/* 下段グラフ */}
         <div className="bg-white dark:bg-gray-800 pt-0 pr-4 pb-4 pl-4 rounded-xl shadow-xl flex-1 min-h-0">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={dataAll} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
               <XAxis
                 dataKey="timestamp"
-                scale="point" 
+                scale="point"
                 tickFormatter={(time) =>
                   dayjs(time).format("MM/DD HH:mm")
                 }
