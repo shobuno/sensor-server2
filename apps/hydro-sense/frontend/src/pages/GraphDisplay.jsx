@@ -1,4 +1,4 @@
-// HydroSense/frontend/src/pages/GraphDisplay.jsx
+// hydro-sense/frontend/src/pages/GraphDisplay.jsx
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -64,7 +64,8 @@ function useDarkMode() {
 export default function GraphDisplay() {
   const [graphTypeAvg, setGraphTypeAvg] = useState(() => localStorage.getItem('graphTypeAvg') || 'air_avg');
   const [graphTypeAll, setGraphTypeAll] = useState(() => localStorage.getItem('graphTypeAll') || 'air_all');
-  const [range, setRange] = useState(() => localStorage.getItem('graphRange') || '1d');
+  const [rangeAvg, setRangeAvg] = useState(() => localStorage.getItem('graphRangeAvg') || '1d');
+  const [rangeAll, setRangeAll] = useState(() => localStorage.getItem('graphRangeAll') || '1d');
   const [dataAvg, setDataAvg] = useState([]);
   const [dataAll, setDataAll] = useState([]);
   const navigate = useNavigate();
@@ -73,18 +74,18 @@ export default function GraphDisplay() {
   useEffect(() => {
     localStorage.setItem('graphTypeAvg', graphTypeAvg);
     localStorage.setItem('graphTypeAll', graphTypeAll);
-    localStorage.setItem('graphRange', range);
-  }, [graphTypeAvg, graphTypeAll, range]);
+    localStorage.setItem('graphRangeAvg', rangeAvg);
+    localStorage.setItem('graphRangeAll', rangeAll);
+  }, [graphTypeAvg, graphTypeAll, rangeAvg, rangeAll]);
 
-  const fetchData = async (type, setter) => {
+  const fetchData = async (type, range, setter) => {
     try {
       const res = await fetch(`/api/ec-graph?type=${type}&range=${range}`);
-      //const res = await fetch(`${apiBase}/api/ec-graph?type=${type}&range=${range}`);
       if (!res.ok) throw new Error(`失敗: ${res.status}`);
       const json = await res.json();
       const formatted = json.map((d) => ({
         ...d,
-        timestamp: dayjs(d.timestamp).toDate(), // JSTそのままで処理
+        timestamp: dayjs(d.timestamp).toDate(),
       }));
       setter(formatted);
     } catch (err) {
@@ -94,12 +95,12 @@ export default function GraphDisplay() {
   };
 
   useEffect(() => {
-    fetchData(graphTypeAvg, setDataAvg);
-  }, [graphTypeAvg, range]);
+    fetchData(graphTypeAvg, rangeAvg, setDataAvg);
+  }, [graphTypeAvg, rangeAvg]);
 
   useEffect(() => {
-    fetchData(graphTypeAll, setDataAll);
-  }, [graphTypeAll, range]);
+    fetchData(graphTypeAll, rangeAll, setDataAll);
+  }, [graphTypeAll, rangeAll]);
 
   const renderAreaLine = (key, label, color) => [
     <Area key={`${key}_area`} type="monotone" dataKey={key} stroke={color} fill={color} fillOpacity={0.25} dot={false} name={label} />,
@@ -136,19 +137,18 @@ export default function GraphDisplay() {
     <div className="bg-white dark:bg-gray-900 w-full min-h-screen h-screen text-gray-900 dark:text-white px-4 py-6 overflow-hidden">
 
       <div className="flex-1 flex justify-center items-center min-w-0">
-        {/* latestアイコン */}
-          <button
-            onClick={() => navigate('/latest')}
-            className="focus:outline-none active:scale-95 transition-transform"
-            title="latest"
-            style={{ background: 'none', border: 'none', padding: 0 }}
-          >
-            <img
-              src="/hydro-sense/icons/latest.png"
-              alt="グラフ表示"
-              className="w-20 h-20 hover:opacity-80 hover:scale-105 transition-all"
-            />
-          </button>
+        <button
+          onClick={() => navigate('/latest')}
+          className="focus:outline-none active:scale-95 transition-transform"
+          title="latest"
+          style={{ background: 'none', border: 'none', padding: 0 }}
+        >
+          <img
+            src="/hydro-sense/icons/latest.png"
+            alt="グラフ表示"
+            className="w-20 h-20 hover:opacity-80 hover:scale-105 transition-all"
+          />
+        </button>
         <img
           src="/hydro-sense/icons/graph.png"
           alt="グラフ"
@@ -157,27 +157,26 @@ export default function GraphDisplay() {
         />
       </div>
 
-      <div className="flex items-end gap-2 mb-2 px-0" style={{ margin: 0 }}>
-        <div className="flex gap-2 flex-shrink-0 min-w-0">
-          <select
-            value={graphTypeAvg}
-            onChange={(e) => setGraphTypeAvg(e.target.value)}
-            className="p-2 rounded bg-gray-800 text-white"
-          >
-            {AVG_GRAPH_OPTIONS.map(opt => (
-              <option key={opt.key} value={opt.key}>{opt.label}</option>
-            ))}
-          </select>
-          <select
-            value={range}
-            onChange={(e) => setRange(e.target.value)}
-            className="p-2 rounded bg-gray-800 text-white"
-          >
-            {RANGE_OPTIONS.map(opt => (
-              <option key={opt.key} value={opt.key}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
+      {/* 平均値グラフ 選択 */}
+      <div className="flex items-end gap-2 mb-2 px-0">
+        <select
+          value={graphTypeAvg}
+          onChange={(e) => setGraphTypeAvg(e.target.value)}
+          className="p-2 rounded bg-gray-800 text-white"
+        >
+          {AVG_GRAPH_OPTIONS.map(opt => (
+            <option key={opt.key} value={opt.key}>{opt.label}</option>
+          ))}
+        </select>
+        <select
+          value={rangeAvg}
+          onChange={(e) => setRangeAvg(e.target.value)}
+          className="p-2 rounded bg-gray-800 text-white"
+        >
+          {RANGE_OPTIONS.map(opt => (
+            <option key={opt.key} value={opt.key}>{opt.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="flex flex-col h-[calc(100vh-140px)] gap-4">
@@ -211,13 +210,23 @@ export default function GraphDisplay() {
           </ResponsiveContainer>
         </div>
 
-        <div className="flex items-end gap-2 mb-2 px-0" style={{ margin: 0 }}>
+        {/* 最大・最小・平均 選択 */}
+        <div className="flex items-end gap-2 mb-2 px-0">
           <select
             value={graphTypeAll}
             onChange={(e) => setGraphTypeAll(e.target.value)}
-            className="p-2 rounded bg-gray-800 text-white "
+            className="p-2 rounded bg-gray-800 text-white"
           >
             {ALL_GRAPH_OPTIONS.map(opt => (
+              <option key={opt.key} value={opt.key}>{opt.label}</option>
+            ))}
+          </select>
+          <select
+            value={rangeAll}
+            onChange={(e) => setRangeAll(e.target.value)}
+            className="p-2 rounded bg-gray-800 text-white"
+          >
+            {RANGE_OPTIONS.map(opt => (
               <option key={opt.key} value={opt.key}>{opt.label}</option>
             ))}
           </select>
