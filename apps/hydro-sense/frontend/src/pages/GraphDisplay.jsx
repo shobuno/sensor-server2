@@ -143,6 +143,15 @@ export default function GraphDisplay() {
     }
   };
 
+  // ✅ X軸範囲を上段グラフの時間で統一
+  const getTimeDomain = (data) => {
+    if (!data || data.length === 0) return ['auto', 'auto'];
+    const timestamps = data.map(d => d.timestamp.getTime());
+    return [Math.min(...timestamps), Math.max(...timestamps)];
+  };
+
+  const timeDomain = getTimeDomain(dataAvg);
+
   return (
     <div className="bg-white dark:bg-gray-900 w-full min-h-screen h-screen text-gray-900 dark:text-white px-4 py-6 overflow-hidden">
 
@@ -167,7 +176,7 @@ export default function GraphDisplay() {
         />
       </div>
 
-      {/* 上段グラフ設定 */}
+      {/* 上段グラフ選択 */}
       <div className="flex items-end gap-2 mb-2 px-0">
         <select
           value={graphTypeAvg}
@@ -196,7 +205,9 @@ export default function GraphDisplay() {
             <AreaChart data={dataAvg} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
               <XAxis
                 dataKey="timestamp"
-                scale="point"
+                type="number"
+                domain={timeDomain}
+                scale="time"
                 tickFormatter={(time) =>
                   dayjs(time).format("MM/DD HH:mm")
                 }
@@ -220,7 +231,7 @@ export default function GraphDisplay() {
           </ResponsiveContainer>
         </div>
 
-        {/* 下段グラフ設定 */}
+        {/* 下段グラフ選択 */}
         <div className="flex items-end gap-2 mb-2 px-0">
           <select
             value={graphTypeAll}
@@ -236,8 +247,12 @@ export default function GraphDisplay() {
             onChange={(e) => setViewAll(e.target.value)}
             className="p-2 rounded bg-gray-800 text-white"
           >
-            {VIEW_OPTIONS.map(opt => (
-              <option key={opt.key} value={opt.key}>{opt.label}</option>
+            {['10m', '1h', 'daily', 'monthly'].map(view => (
+              <option key={view} value={view}>
+                {view === '10m' ? '10分' :
+                 view === '1h' ? '1時間' :
+                 view === 'daily' ? '日次' : '月次'}
+              </option>
             ))}
           </select>
         </div>
@@ -248,7 +263,9 @@ export default function GraphDisplay() {
             <LineChart data={dataAll} margin={{ top: 0, right: 10, left: 0, bottom: 10 }}>
               <XAxis
                 dataKey="timestamp"
-                scale="point"
+                type="number"
+                domain={timeDomain}
+                scale="time"
                 tickFormatter={(time) =>
                   dayjs(time).format("MM/DD HH:mm")
                 }
