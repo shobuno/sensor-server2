@@ -29,7 +29,7 @@ router.post('/', async (req, res) => {
     // EC補正の逆算処理
     const wEC25 = target_ec / (1 + coef * (temperature - 25.0));
     const r1 = 1000 + ra;
-    const vdrop = vin * ec_avg / 4096;
+    const vdrop = vin * ec_avg / 32768;
     const rc = (vdrop * r1) / (vin - vdrop) - ra;
 
     if (rc <= 0 || wEC25 <= 0) {
