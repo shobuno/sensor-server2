@@ -24,6 +24,15 @@ app.use(cors({
 
 app.use(express.json());
 
+// === 一時対応 装置からのログを受信 ===
+app.post('/api/error-log', (req, res) => {
+  const { error, token } = req.body;
+  console.log(`📡 Error Report from Device:`);
+  console.log(`   errorCode: ${error}`);
+  console.log(`   token: ${token}`);
+  res.sendStatus(200);
+});
+
 // === 静的ファイル配信（統合ビルド dist）===
 app.use(express.static(path.join(__dirname, 'frontend/dist')));
 
