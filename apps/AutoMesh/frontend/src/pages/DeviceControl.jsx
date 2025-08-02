@@ -1,14 +1,24 @@
 // AutoMesh/frontend/src/pages/DeviceControl.jsx
 import { useEffect, useState } from "react";
+import { getToken, logout } from '@/auth';
 
 export default function DeviceControl() {
   const [devices, setDevices] = useState([]);
 
   const fetchData = async () => {
+    const token = getToken();
     const [deviceRes, stateRes, connRes] = await Promise.all([
-      fetch("/automesh/api/get-devices"),
-      fetch("/automesh/api/relay-states"),
-      fetch("/automesh/api/connection-status"),
+      fetch("/automesh/api/get-devices", {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch("/automesh/api/relay-states", {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch("/automesh/api/connection-status", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        }
+      }),
     ]);
 
     const deviceGroups = await deviceRes.json();
@@ -46,7 +56,8 @@ export default function DeviceControl() {
     try {
       await fetch("/automesh/api/device-control", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json",
+        Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ serial_number, relay_index, on: newState }),
       });
     } catch (err) {

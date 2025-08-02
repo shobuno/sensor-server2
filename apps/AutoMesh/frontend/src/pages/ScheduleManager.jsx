@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Button from "../components/ui/button";
+import { getToken } from "../../../../../frontend/src/auth"; // あなたの共通authモジュールの正しいパスに修正
+
 
 export default function ScheduleManager() {
   const [rawDeviceGroups, setRawDeviceGroups] = useState([]); // 元の構造
@@ -19,9 +21,20 @@ export default function ScheduleManager() {
   const dayOptions = ["月", "火", "水", "木", "金", "土", "日"];
 
   useEffect(() => {
-    fetch("/automesh/api/get-devices")
+    const token = getToken();
+    fetch("/automesh/api/get-devices", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      }
+    })
       .then((res) => res.json())
       .then((data) => {
+        console.log("📦 fetched devices:", data);
+
+        if (!Array.isArray(data)) {
+          console.error("❌ get-devices API が配列を返していません:", data);
+          return;
+        }
         setRawDeviceGroups(data);
         const flat = data.map((group) => ({
           serial_number: group.serial_number,
@@ -34,7 +47,11 @@ export default function ScheduleManager() {
         }
       });
 
-    fetch("/automesh/api/schedule")
+    fetch("/automesh/api/schedule", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      }
+    })
       .then((res) => res.json())
       .then((data) => {
         const formatted = data.map((s) => ({
@@ -80,7 +97,8 @@ export default function ScheduleManager() {
 
       const res = await fetch("/automesh/api/schedule", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json",
+        Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify(body),
       });
 
@@ -127,7 +145,8 @@ export default function ScheduleManager() {
     try {
       const res = await fetch(`/automesh/api/schedule/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json",
+        Authorization: `Bearer ${getToken()}`},
         body: JSON.stringify({ enabled: newEnabled })
       });
       const updated = await res.json();
@@ -141,7 +160,12 @@ export default function ScheduleManager() {
 
   const handleDelete = async (id) => {
     try {
-      await fetch(`/automesh/api/schedule/${id}`, { method: "DELETE" });
+    await fetch(`/automesh/api/schedule/${id}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${getToken()}`
+      }
+    });
       setSchedules((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
       console.error("削除エラー:", err);

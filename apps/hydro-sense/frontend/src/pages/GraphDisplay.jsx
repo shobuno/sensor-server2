@@ -9,6 +9,10 @@ import {
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
+import { getToken, logout } from '../../../../../frontend/src/auth';
+
+import latestIcon from '@hydro-sense/assets/icons/latest.png';
+import graphIcon from '@hydro-sense/assets/icons/graph.png';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -69,6 +73,30 @@ function useDarkMode() {
 }
 
 export default function GraphDisplay() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const token = getToken();
+    if (!token) {
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    fetch('/api/auth/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      }
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('unauthorized');
+        return res.json();
+      })
+      .catch(() => {
+        logout();
+        window.location.href = '/login';
+      });
+  }, [navigate]);
+
   const [graphTypeAvg, setGraphTypeAvg] = useState(() => localStorage.getItem('graphTypeAvg') || 'air_avg');
   const [graphTypeAll, setGraphTypeAll] = useState(() => localStorage.getItem('graphTypeAll') || 'air_all');
   const [rangeAvg, setRangeAvg] = useState(() => localStorage.getItem('graphRangeAvg') || '1d');
@@ -76,7 +104,6 @@ export default function GraphDisplay() {
   const [viewAll, setViewAll] = useState(() => localStorage.getItem('graphViewAll') || '10m');
   const [dataAvg, setDataAvg] = useState([]);
   const [dataAll, setDataAll] = useState([]);
-  const navigate = useNavigate();
   const isDark = useDarkMode();
 
   useEffect(() => {
@@ -89,8 +116,15 @@ export default function GraphDisplay() {
 
   const fetchData = async (type, range, setter, view = null) => {
     try {
+      const token = getToken();
       const viewParam = view ? `&view=${view}` : '';
-      const res = await fetch(`/api/ec-graph?type=${type}&range=${range}${viewParam}`);
+      const res = await fetch(`/api/ec-graph?type=${type}&range=${range}${viewParam}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
       if (!res.ok) throw new Error(`失敗: ${res.status}`);
       const json = await res.json();
       const formatted = json.map((d) => ({
@@ -157,19 +191,19 @@ export default function GraphDisplay() {
 
       <div className="flex-1 flex justify-center items-center min-w-0">
         <button
-          onClick={() => navigate('/latest')}
+          onClick={() => navigate('/hydro-sense/latest')}
           className="focus:outline-none active:scale-95 transition-transform"
           title="latest"
           style={{ background: 'none', border: 'none', padding: 0 }}
         >
           <img
-            src="/hydro-sense/icons/latest.png"
+            src={latestIcon}
             alt="グラフ表示"
             className="w-20 h-20 hover:opacity-80 hover:scale-105 transition-all"
           />
         </button>
         <img
-          src="/hydro-sense/icons/graph.png"
+          src={graphIcon}
           alt="グラフ"
           className="w-30 h-30 max-w-[80px] max-h-[80px] object-contain"
           style={{ minWidth: 80, minHeight: 80 }}

@@ -1,12 +1,18 @@
 // apps/AutoMesh/frontend/src/components/UnregisteredList.jsx
 import { useEffect, useState } from 'react';
+import { getToken } from "@/auth";
 
 export default function UnregisteredList() {
   const [devices, setDevices] = useState([]);
   const [formValues, setFormValues] = useState({});
 
   const fetchData = async () => {
-    const res = await fetch('/automesh/api/entry-devices');
+    const token = getToken();
+    const res = await fetch('/automesh/api/entry-devices', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      }
+    });
     const json = await res.json();
     setDevices(json);
   };
@@ -23,7 +29,8 @@ export default function UnregisteredList() {
 
     const res = await fetch('/automesh/api/register-device', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}` },
       body: JSON.stringify({ serial_number: serial, name }),
     });
 

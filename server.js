@@ -7,12 +7,12 @@ const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
 const cron = require('node-cron');
+const requireAuth = require('./middleware/requireAuth');
 
 const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
-// === CORS設定 ===
 app.use(cors({
   origin: [
     'http://localhost:3000',
@@ -24,70 +24,62 @@ app.use(cors({
 
 app.use(express.json());
 
-// === Hydro Sense: 静的ファイルとAPI ===
-app.use('/hydro-sense', express.static(path.join(__dirname, 'apps/hydro-sense/frontend/dist')));
+// === 静的ファイル配信（統合ビルド dist）===
+app.use(express.static(path.join(__dirname, 'frontend/dist')));
+
+app.use('/hydro-sense', express.static(path.join(__dirname, 'frontend/dist')));
+
+app.get(/^\/hydro-sense(\/.*)?$/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+});
+
+
+// === APIルーティング ===
+
+// 認証関連
+app.use('/api/auth', require('./backend/routes/auth'));
+app.use('/api/email', require('./backend/routes/emailVerification'));
+
+// 管理者API（保護）
+app.use('/api/admin', requireAuth, require('./backend/routes/admin'));
+app.use('/api/admin/users', requireAuth, require('./backend/routes/adminUsers'));
+
+// HydroSense API（保護）
 const hydroRoutes = require('./apps/hydro-sense/backend/routes');
-app.use('/api', hydroRoutes);
+app.use('/api', requireAuth, hydroRoutes);
 
-// === AutoMesh: API登録（静的配信はまだ未使用） ===
+// AutoMesh API（保護）
 const autoMeshApp = require('./apps/AutoMesh/backend/app');
+app.use('/automesh/api', requireAuth, autoMeshApp);
 
-console.log('🧪 autoMeshApp の typeof:', typeof autoMeshApp);  // ← 
-
-app.use('/automesh/api', autoMeshApp);
-
-// === ルート表示 ===
-const routes = autoMeshApp._router?.stack?.filter(r => r.route);
-if (routes) {
-  routes.forEach(r => {
-    console.log('🛣️ 登録ルート:', Object.keys(r.route.methods)[0].toUpperCase(), r.route.path);
-  });
-}
-
-
-// === AutoMesh: 静的配信追加 ===
-app.use('/auto-mesh', express.static(path.join(__dirname, 'apps/AutoMesh/frontend/dist')));
-
-// === AutoMesh: SPA fallback追加 ===
-app.get(/^\/auto-mesh(?!\/api\/).*/, (req, res) => {
-  res.sendFile(path.join(__dirname, 'apps/AutoMesh/frontend/dist/index.html'));
+// === React Router fallback ===
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
 });
 
-// === SPA fallback（Hydro Sense）===
-app.get(/^\/hydro-sense(?!\/api\/).*/, (req, res) => {
-  res.sendFile(path.join(__dirname, 'apps/hydro-sense/frontend/dist/index.html'));
-});
-
-// === WebSocket: Hydro Sense 用 ===
+// === WebSocket設定 ===
 const setupHydroWS = require('./apps/hydro-sense/wsHandlers/ws');
 const hydroWss = new WebSocket.Server({ noServer: true });
 
-// === WebSocket: AutoMesh フロント用 ===
 const setupAutoMeshWS = require('./apps/AutoMesh/backend/ws/automesh');
 setupAutoMeshWS(server, (deviceList) => {
   console.log('🔄 AutoMeshデバイス更新:', deviceList);
 });
 
-// === WebSocket: AutoMesh ESP32 Entry用 ===
 const { setupAutoMeshEntryWSS } = require('./apps/AutoMesh/backend/ws/automesh-entry');
 setupAutoMeshEntryWSS(server);
 
-// ✅ WebSocket: AutoMesh Command用（修正済み） ===
 const { setupAutoMeshCommandWSS } = require('./apps/AutoMesh/backend/ws/automesh-command');
 const commandWss = new WebSocket.Server({ noServer: true });
 setupAutoMeshCommandWSS(commandWss);
 
-// === WebSocket Upgrade Routing ===
 server.on('upgrade', (req, socket, head) => {
   const { url } = req;
-
   if (url === '/ws/hydro') {
     hydroWss.handleUpgrade(req, socket, head, (ws) => {
       hydroWss.emit('connection', ws, req);
       setupHydroWS(ws);
     });
-  } else if (url === '/automesh-entry' || url === '/ws/automesh') {
-    // Entry や フロントの WebSocket は内部で handleUpgrade 済み
   } else if (url === '/automesh-command') {
     commandWss.handleUpgrade(req, socket, head, (ws) => {
       commandWss.emit('connection', ws, req);
@@ -97,17 +89,7 @@ server.on('upgrade', (req, socket, head) => {
   }
 });
 
-// === 起動 ===
-server.listen(port, () => {
-  console.log(`🚀 本番サーバ起動: http://localhost:${port}`);
-});
-
-// === ルートリダイレクト ===
-app.get('/', (req, res) => {
-  res.redirect('/hydro-sense');
-});
-
-// === 深夜2時の定期処理 ===
+// === 定期処理 ===
 const { aggregateWaterDailyValues } = require('./apps/hydro-sense/backend/controllers/aggregateWaterDaily');
 const { deleteOldData } = require('./apps/hydro-sense/backend/controllers/deleteOldData');
 
@@ -122,11 +104,9 @@ cron.schedule('0 2 * * *', async () => {
   }
 });
 
-// === スケジュール実行処理（毎分） ===
 const { runSchedules } = require('./apps/AutoMesh/backend/tasks/runSchedules');
 
 cron.schedule('* * * * *', async () => {
-  //console.log('⏰ スケジュール実行チェック');
   try {
     await runSchedules();
   } catch (err) {
@@ -134,6 +114,7 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-
-
-
+// === 起動 ===
+server.listen(port, () => {
+  console.log(`🚀 本番サーバ起動: http://localhost:${port}`);
+});

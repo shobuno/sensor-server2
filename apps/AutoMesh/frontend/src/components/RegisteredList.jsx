@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { getToken } from "@/auth";
 
 export default function RegisteredList() {
   const [deviceGroups, setDeviceGroups] = useState([]);
@@ -9,7 +10,12 @@ export default function RegisteredList() {
   const [editName, setEditName] = useState('');
 
   const fetchDevices = async () => {
-    const res = await fetch('/automesh/api/get-devices');
+    const token = getToken();
+    const res = await fetch('/automesh/api/get-devices', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      }
+  });
     const json = await res.json();
     setDeviceGroups(json);
   };
@@ -24,7 +30,8 @@ export default function RegisteredList() {
     try {
       const res = await fetch('/automesh/api/blink-led', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json',
+        Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ serial_number, relay_index }),
       });
 
@@ -41,7 +48,8 @@ export default function RegisteredList() {
 
     try {
       const res = await fetch(`/automesh/api/unregister-device/${serial_number}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        Authorization: `Bearer ${getToken()}`
       });
 
       const result = await res.json();
@@ -57,7 +65,8 @@ export default function RegisteredList() {
       await axios.put('/automesh/api/edit-device-name', {
         serial_number,
         relay_index,
-        new_name: editName
+        new_name: editName,
+        Authorization: `Bearer ${getToken()}`
       });
       alert('✅ 名前を更新しました');
       setEditTarget(null);

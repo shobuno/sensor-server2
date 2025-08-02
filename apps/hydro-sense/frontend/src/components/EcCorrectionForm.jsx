@@ -1,12 +1,22 @@
 // frontend/src/components/EcCorrectionForm.jsx
+
 import { useEffect, useState } from "react";
+import { useNavigate, Navigate } from "react-router-dom";
+import { getToken } from "@/auth"; // ← ✅ これが必要
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { useNavigate } from "react-router-dom";
+import ecCorrectionIcon from '@hydro-sense/assets/icons/ecCorrection.png';
+
 
 export default function EcCorrectionForm() {
+
+  const token = getToken();
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+
   const [serials, setSerials] = useState([]);
   const [selectedSerial, setSelectedSerial] = useState("");
   const [targetEc, setTargetEc] = useState("");
@@ -17,7 +27,11 @@ export default function EcCorrectionForm() {
   console.log("✅ apiBase is:", apiBase);
 
   useEffect(() => {
-    fetch(`${apiBase}/api/sensor-serials?type=water`)
+    fetch(`${apiBase}/api/sensor-serials?type=water`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
       .then((res) => res.json())
       .then((data) => {
         setSerials(data);
@@ -25,7 +39,11 @@ export default function EcCorrectionForm() {
       })
       .catch(err => console.error("🔥 sensor-serials fetch error", err));
 
-    fetch(`${apiBase}/api/latest-hourly-avg`)
+    fetch(`${apiBase}/api/latest-hourly-avg`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
       .then((res) => res.json())
       .then((data) => {
         setLatestValues({ water_avg: data.water_avg, ec_avg: data.ec_avg });
@@ -37,7 +55,9 @@ export default function EcCorrectionForm() {
     if (selectedSerial && latestValues.ec_avg && latestValues.water_avg) {
       fetch(`${apiBase}/api/calculate-ec-corrected`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          'Authorization': `Bearer ${token}`, },
         body: JSON.stringify({
           serial_number: selectedSerial,
           ec_raw: latestValues.ec_avg,
@@ -90,7 +110,7 @@ export default function EcCorrectionForm() {
       <Card className="bg-white dark:bg-gray-800 w-full max-w-xl rounded-xl shadow-lg">
         <CardContent className="space-y-6 p-6">
           <div className="flex justify-center">
-            <img src="/hydro-sense/icons/ecCorrection.png" alt="EC実測値" className="w-20 h-20" />
+            <img src={ecCorrectionIcon} alt="EC実測値" className="w-20 h-20" />
           </div>
           <div>
             <Label className="block mb-1">センサー選択</Label>
@@ -99,12 +119,11 @@ export default function EcCorrectionForm() {
               value={selectedSerial}
               onChange={(e) => setSelectedSerial(e.target.value)}
             >
-              {serials.map((s) => (
+              {Array.isArray(serials) && serials.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </div>
-
           <div>
             <Label className="block mb-1">目標EC値 (mS/cm)</Label>
             <Input
@@ -125,7 +144,8 @@ export default function EcCorrectionForm() {
           <div className="flex gap-4 justify-center">
             <Button className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded" onClick={handleCalculateK1}>K1計算</Button>
             <Button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded" onClick={handleCalculateABC}>abcログ登録</Button>
-            <Button variant="outline" onClick={() => navigate('/latest')}>戻る</Button>
+            <Button variant="outline" onClick={() => navigate('/hydro-sense/latest')}>戻る</Button>
+
           </div>
         </CardContent>
       </Card>

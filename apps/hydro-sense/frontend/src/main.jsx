@@ -1,16 +1,12 @@
-// apps/hydro-sense/frontend/src/main.jsx
+// sensor-server/apps/hydro-sense/frontend/src/index.jsx
 
-import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
-import App from './App.jsx';
-import './index.css';
-import './tailwind-keep.css';
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "@/App.jsx";       // ✅ 共通Appを@経由で読み込み
+import "@/index.css";             // ✅ 共通CSSも同様に
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <BrowserRouter basename="/hydro-sense">
-      <App />
-    </BrowserRouter>
-  </StrictMode>,
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
 );
