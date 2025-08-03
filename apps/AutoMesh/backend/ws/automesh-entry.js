@@ -19,7 +19,7 @@ function setupAutoMeshEntryWSS(server) {
   });
 
   wss.on("connection", (ws) => {
-    console.log("🔌 ESP32接続");
+    // console.log("🔌 ESP32接続");
 
     let clientSerial = null;
 
@@ -42,20 +42,20 @@ function setupAutoMeshEntryWSS(server) {
               `DELETE FROM automesh.devices WHERE serial_number = $1`,
               [data.serial_number]
             );
-            console.log(`🗑 既存レコード削除: ${data.serial_number}`);
+            // console.log(`🗑 既存レコード削除: ${data.serial_number}`);
           }
 
           // 未登録デバイス一覧に追加（重複なし）
           if (!entryDevices.find(d => d.serial_number === data.serial_number)) {
             entryDevices.push({ serial_number: data.serial_number });
-            console.log(`📥 未登録デバイス追加: ${data.serial_number}`);
+            // console.log(`📥 未登録デバイス追加: ${data.serial_number}`);
           }
 
           // entryClients に登録（重複回避のため一度削除）
           entryClients = entryClients.filter(c => c.serial_number !== data.serial_number);
           entryClients.push({ serial_number: data.serial_number, ws });
 
-          console.log(`📡 entryClients 登録: ${data.serial_number}`);
+          // console.log(`📡 entryClients 登録: ${data.serial_number}`);
         }
       } catch (e) {
         console.warn("❌ JSON parse エラー:", e);
@@ -64,7 +64,7 @@ function setupAutoMeshEntryWSS(server) {
 
     ws.on("close", () => {
       entryClients = entryClients.filter(c => c.ws !== ws);
-      console.log(`❌ エントリー接続切断: ${clientSerial}`);
+      // console.log(`❌ エントリー接続切断: ${clientSerial}`);
     });
   });
 }
@@ -88,7 +88,7 @@ function notifyDeviceRegistered(serial, name) {
 
     setTimeout(() => {
       client.ws.close();
-      console.log(`✅ 登録通知 → 接続切断: ${serial}`);
+      // console.log(`✅ 登録通知 → 接続切断: ${serial}`);
     }, 100);
   } else {
     console.warn(`⚠️ 該当クライアントが未接続または既に閉じています: ${serial}`);
@@ -105,7 +105,7 @@ function requestDeviceBlink(serial_number) {
       type: "blink",
       serial_number,
     }));
-    console.log(`💡 点滅要求送信: ${serial_number}`);
+    // console.log(`💡 点滅要求送信: ${serial_number}`);
   }
 }
 
@@ -118,7 +118,7 @@ function notifyDeviceUnregistered(serial_number) {
       message: '登録が解除されました。不揮発メモリを消去してください。',
     }));
     client.ws.close();
-    console.log(`🔕 解除通知＆切断: ${serial_number}`);
+    // console.log(`🔕 解除通知＆切断: ${serial_number}`);
   } else {
     console.warn(`⚠️ 接続なし: ${serial_number} に解除通知を送れませんでした`);
   }

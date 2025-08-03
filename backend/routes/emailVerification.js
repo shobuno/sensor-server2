@@ -20,8 +20,8 @@ router.get('/verify-email', async (req, res) => {
       [token]
     );
     
-    console.log('🔍 受信トークン:', token);
-    console.log('🧾 DB側トークン:', result.rows[0]?.verification_token);
+    // console.log('🔍 受信トークン:', token);
+    // console.log('🧾 DB側トークン:', result.rows[0]?.verification_token);
 
     if (result.rows.length === 0) {
       return res.status(400).json({ error: '無効または既に使用済みのトークンです' });

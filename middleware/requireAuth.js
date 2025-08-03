@@ -12,11 +12,11 @@ module.exports = (req, res, next) => {
   }
 
   try {
-    console.log('🔐 検証中のトークン:', token);
-    console.log('🔐 使用するJWT_SECRET:', process.env.JWT_SECRET); // 追加！
+    // console.log('🔐 検証中のトークン:', token);
+    // console.log('🔐 使用するJWT_SECRET:', process.env.JWT_SECRET); // 追加！
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log('✅ JWT 検証成功:', decoded);
+    // console.log('✅ JWT 検証成功:', decoded);
 
     req.user = decoded;
     next();

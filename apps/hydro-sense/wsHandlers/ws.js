@@ -1,7 +1,7 @@
 // apps/hydro-sense/wsHandlers/ws.js
 
 module.exports = function setupHydroWS(ws) {
-  console.log('[HydroSense WS] クライアント接続');
+  // console.log('[HydroSense WS] クライアント接続');
 
   ws.send(JSON.stringify({ type: 'connected', message: 'HydroSense WebSocket 接続完了' }));
 

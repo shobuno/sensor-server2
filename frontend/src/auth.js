@@ -3,7 +3,7 @@
 // tokenの取得と検証
 export function getToken() {
   const token = localStorage.getItem('token');
-  console.log("🟢 getToken() =", token);
+  // console.log("🟢 getToken() =", token);
   return token;
 }
 

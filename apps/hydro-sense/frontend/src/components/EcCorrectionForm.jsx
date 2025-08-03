@@ -24,7 +24,7 @@ export default function EcCorrectionForm() {
   const [ecCorrected, setEcCorrected] = useState(null);
   const navigate = useNavigate();
   const apiBase = import.meta.env.VITE_API_BASE_URL;
-  console.log("✅ apiBase is:", apiBase);
+  // console.log("✅ apiBase is:", apiBase);
 
   useEffect(() => {
     fetch(`${apiBase}/api/sensor-serials?type=water`, {

@@ -7,7 +7,7 @@ let commandClients = [];
 
 function setupAutoMeshCommandWSS(wss) {
   wss.on('connection', (ws) => {
-    console.log('🔌 /automesh-command WebSocket接続');
+    // console.log('🔌 /automesh-command WebSocket接続');
 
     let serial_number = null;
 
@@ -34,7 +34,7 @@ function setupAutoMeshCommandWSS(wss) {
           commandClients = commandClients.filter(c => c.serial_number !== serial_number);
           commandClients.push({ serial_number, ws });
 
-          console.log(`✅ ${serial_number} が command に接続`);
+          // console.log(`✅ ${serial_number} が command に接続`);
         }
 
         if (data.type === 'relay-state' && typeof data.relay_index === 'number') {
@@ -47,7 +47,7 @@ function setupAutoMeshCommandWSS(wss) {
 
     ws.on('close', () => {
       commandClients = commandClients.filter(c => c.ws !== ws);
-      console.log(`❌ command 接続切断: ${serial_number}`);
+      // console.log(`❌ command 接続切断: ${serial_number}`);
     });
   });
 }
@@ -56,7 +56,7 @@ function sendCommandToDevice(serial_number, message) {
   const client = commandClients.find(c => c.serial_number === serial_number);
   if (client && client.ws.readyState === client.ws.OPEN) {
     client.ws.send(JSON.stringify(message));
-    console.log(`💡 Command送信: ${serial_number}`, message);
+    // console.log(`💡 Command送信: ${serial_number}`, message);
   } else {
     console.warn(`⚠️ Command送信失敗: ${serial_number} は未接続`);
   }
@@ -70,7 +70,7 @@ function notifyCommandUnregistered(serial_number) {
       message: '登録が解除されました。不揮発メモリを消去してください。',
     }));
     client.ws.close();
-    console.log(`🔕 Command: 解除通知＆切断: ${serial_number}`);
+    // console.log(`🔕 Command: 解除通知＆切断: ${serial_number}`);
   } else {
     console.warn(`⚠️ Command: 解除通知対象未接続: ${serial_number}`);
   }
@@ -87,7 +87,7 @@ let relayStates = {};
 function updateRelayState(serial_number, relay_index, state) {
   const key = `${serial_number}-${relay_index}`;
   relayStates[key] = state;
-  console.log(`📥 状態記録: ${key} = ${state}`);
+  // console.log(`📥 状態記録: ${key} = ${state}`);
 }
 
 function getRelayStates() {

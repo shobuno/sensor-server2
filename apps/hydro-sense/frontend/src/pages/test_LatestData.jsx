@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 export default function LatestData() {
   const navigate = useNavigate();
   const location = useLocation();
-  console.log("✅ LatestData コンポーネント内: useNavigate呼び出し OK");
+  // console.log("✅ LatestData コンポーネント内: useNavigate呼び出し OK");
 
   useEffect(() => {
     console.log("✅ location.pathname =", location.pathname);

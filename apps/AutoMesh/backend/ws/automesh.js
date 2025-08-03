@@ -21,7 +21,7 @@ function setupAutoMeshWebSocket(server, broadcastToClients) {
           broadcastToClients(getCurrentDevices());
 
         } else if (data.type === 'blink-request' && data.serial_number) {
-          console.log(`🔔 点滅リクエスト受信: ${data.serial_number}`);
+          // console.log(`🔔 点滅リクエスト受信: ${data.serial_number}`);
           const deviceWs = connectedDevices.get(data.serial_number);
           if (deviceWs) {
             deviceWs.send(JSON.stringify({ type: 'blink' }));

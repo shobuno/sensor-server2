@@ -29,7 +29,7 @@ export default function ScheduleManager() {
     })
       .then((res) => res.json())
       .then((data) => {
-        console.log("📦 fetched devices:", data);
+        // console.log("📦 fetched devices:", data);
 
         if (!Array.isArray(data)) {
           console.error("❌ get-devices API が配列を返していません:", data);

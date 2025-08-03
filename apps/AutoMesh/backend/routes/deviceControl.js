@@ -53,7 +53,7 @@ router.post('/', (req, res) => {
       on
     });
 
-    console.log(`💡 relay-toggle 送信: ${serial_number} → relay ${relay_index} = ${on}`);
+    // console.log(`💡 relay-toggle 送信: ${serial_number} → relay ${relay_index} = ${on}`);
     res.json({ message: 'リレー制御指示を送信しました' });
   } catch (err) {
     console.error('リレー制御エラー:', err);
