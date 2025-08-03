@@ -143,14 +143,14 @@ export default function LatestData() {
 
   return (
     <div className="bg-white dark:bg-gray-900 w-full min-h-screen text-gray-900 dark:text-white px-2 sm:px-4 py-6 flex flex-col">
-      <div className="w-full flex flex-col md:flex-row gap-6 flex-grow">
-
-        {/* 左側：データカード */}
-        <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-xl shadow-xl w-full md:w-[300px] flex flex-col items-center justify-start" style={{ paddingLeft: '5px', paddingRight: '5px' }} >
+      {/* レスポンシブレイアウト */}
+      <div className="flex flex-col gap-6 w-full md:flex-row">
+        {/* サイドカード */}
+        <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-xl shadow-xl w-full md:w-[320px] flex-shrink-0 flex flex-col items-center justify-start">
           <div className="flex flex-row items-center gap-3 mb-4">
             <img
               src={latestIcon}
-              alt="最新情報"
+              alt="最新情報2"
               className="w-14 h-14 md:w-20 md:h-20"
               style={{ minWidth: '3.5rem', minHeight: '3.5rem' }}
             />
