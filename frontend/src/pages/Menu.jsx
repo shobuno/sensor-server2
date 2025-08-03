@@ -44,16 +44,16 @@ export default function Menu() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 px-2">
       <div className="bg-white dark:bg-gray-800 p-8 rounded shadow-md w-full max-w-2xl">
-        <h2 className="text-6xl sm:text-5xl font-bold text-center mb-12 text-gray-900 dark:text-white break-words">
+        <h2 className="text-3xl sm:text-2xl font-bold text-center mb-12 text-gray-900 dark:text-white break-words">
           ようこそ、<span className="block">{user.email} さん</span>
         </h2>
-        <p className="text-center mb-8 text-4xl sm:text-3xl text-gray-900 dark:text-gray-200">権限: {user.role}</p>
+        <p className="text-center mb-8 text-xl sm:text-lg text-gray-900 dark:text-gray-200">権限: {user.role}</p>
 
         <ul className="space-y-6">
           <li>
             <button
               onClick={() => navigate('/hydro-sense/latest')}
-              className="w-full bg-blue-500 dark:bg-blue-600 text-white py-8 text-5xl sm:text-4xl rounded hover:bg-blue-600 transition"
+              className="w-full bg-blue-500 dark:bg-blue-600 text-white py-4 text-2xl sm:text-xl rounded hover:bg-blue-600 transition"
             >
               💧 Hydro Sense
             </button>
@@ -61,7 +61,7 @@ export default function Menu() {
           <li>
             <button
               onClick={() => navigate('/auto-mesh/control')}
-              className="w-full bg-blue-500 dark:bg-blue-600 text-white py-8 text-5xl sm:text-4xl rounded hover:bg-blue-600 transition"
+              className="w-full bg-blue-500 dark:bg-blue-600 text-white py-4 text-2xl sm:text-xl rounded hover:bg-blue-600 transition"
             >
               ⚙️ AutoMesh
             </button>
@@ -70,7 +70,7 @@ export default function Menu() {
             <li>
               <button
                 onClick={() => navigate('/admin')}
-                className="w-full bg-yellow-500 dark:bg-yellow-600 text-white py-8 text-5xl sm:text-4xl rounded hover:bg-yellow-600 transition"
+                className="w-full bg-yellow-500 dark:bg-yellow-600 text-white py-4 text-2xl sm:text-xl rounded hover:bg-yellow-600 transition"
               >
                 🔒 管理者専用ページ
               </button>
@@ -83,7 +83,7 @@ export default function Menu() {
             logout();
             navigate('/login');
           }}
-          className="w-full bg-red-500 dark:bg-red-600 text-white py-8 text-5xl sm:text-4xl rounded hover:bg-red-600 transition mt-8"
+          className="w-full bg-red-500 dark:bg-red-600 text-white py-4 text-2xl sm:text-xl rounded hover:bg-red-600 transition mt-8"
         >
           ログアウト
         </button>
