@@ -141,6 +141,15 @@ export default function LatestData() {
     }[level] ?? "bg-gray-500";
   };
 
+  const levelTextColor = (level) => {
+    return {
+      3: "text-green-500",
+      2: "text-blue-500",
+      1: "text-yellow-400",
+      0: "text-red-500"
+    }[level] ?? "bg-gray-500";
+  };
+
   return (
     <div className="bg-white dark:bg-gray-900 w-full min-h-screen text-gray-900 dark:text-white px-2 sm:px-4 py-6 flex flex-col">
       {/* レスポンシブレイアウト */}
@@ -195,7 +204,7 @@ export default function LatestData() {
 
               <div className="mt-2">
                 <p className="font-semibold">
-                  水位: <span className={levelColor(data.water_level)}>{formatWaterLevel(data.water_level)}</span>
+                  水位: <span className={levelTextColor(data.water_level)}>{formatWaterLevel(data.water_level)}</span>
                 </p>
                 <div className="w-[150px] h-4 bg-gray-700 rounded mt-1">
                   <div className={`h-4 ${levelColor(data.water_level)} rounded transition-all`}
