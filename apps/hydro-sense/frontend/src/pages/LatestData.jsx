@@ -226,7 +226,11 @@ export default function LatestData() {
               <AreaChart data={graphData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
                 <XAxis dataKey="timestamp" tickFormatter={(time) => dayjs(time).format("HH:mm")}
                   tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }} />
-                <YAxis width={38} tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }} />
+                <YAxis
+                  width={38}
+                  tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
+                  domain={['auto', 'auto']}
+                />
                 <Tooltip content={<CustomTooltip isDark={isDark} />} />
                 <Legend verticalAlign="top" align="right" />
                 <Area type="monotone" dataKey="air_avg" stroke="#82c91e" fill="#82c91e" fillOpacity={0.25} dot={false} name="気温" />
@@ -243,7 +247,12 @@ export default function LatestData() {
               <AreaChart data={graphData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
                 <XAxis dataKey="timestamp" tickFormatter={(time) => dayjs(time).format("HH:mm")}
                   tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }} />
-                <YAxis width={40} tickFormatter={(v) => v?.toFixed(2)} tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }} />
+                <YAxis
+                  width={40}
+                  tickFormatter={(v) => v?.toFixed(2)}
+                  tick={{ fill: isDark ? "#e5e7eb" : "#374151", fontSize: 12 }}
+                  domain={['auto', 'auto']}
+                />
                 <Tooltip labelFormatter={(value) => dayjs(value).format("YYYY/MM/DD HH:mm")}
                   contentStyle={{
                     backgroundColor: isDark ? '#222' : '#fff',
