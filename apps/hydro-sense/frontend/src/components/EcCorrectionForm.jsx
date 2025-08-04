@@ -74,7 +74,9 @@ export default function EcCorrectionForm() {
     if (!targetEc || !selectedSerial) return alert("目標EC値を入力してください");
     fetch(`${apiBase}/api/calculate-k1`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`, 
+    },
       body: JSON.stringify({
         serial_number: selectedSerial,
         target_ec: parseFloat(targetEc),
@@ -92,7 +94,9 @@ export default function EcCorrectionForm() {
 
     fetch(`${apiBase}/api/register-ec-log`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`, 
+      },
       body: JSON.stringify({
         serial_number: selectedSerial,
         target_ec: parseFloat(targetEc),
