@@ -23,11 +23,10 @@ export default function EcCorrectionForm() {
   const [latestValues, setLatestValues] = useState({ water_avg: "", ec_avg: "" });
   const [ecCorrected, setEcCorrected] = useState(null);
   const navigate = useNavigate();
-  const apiBase = import.meta.env.VITE_API_BASE_URL;
   // console.log("✅ apiBase is:", apiBase);
 
   useEffect(() => {
-    fetch(`${apiBase}/api/sensor-serials?type=water`, {
+    fetch(`/api/sensor-serials?type=water`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -39,7 +38,7 @@ export default function EcCorrectionForm() {
       })
       .catch(err => console.error("🔥 sensor-serials fetch error", err));
 
-    fetch(`${apiBase}/api/latest-hourly-avg`, {
+    fetch(`/api/latest-hourly-avg`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -49,11 +48,11 @@ export default function EcCorrectionForm() {
         setLatestValues({ water_avg: data.water_avg, ec_avg: data.ec_avg });
       })
       .catch(err => console.error("🔥 latest-hourly-avg fetch error", err));
-  }, [apiBase]);
+  }, []);
 
   useEffect(() => {
     if (selectedSerial && latestValues.ec_avg && latestValues.water_avg) {
-      fetch(`${apiBase}/api/calculate-ec-corrected`, {
+      fetch(`/api/calculate-ec-corrected`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -72,7 +71,7 @@ export default function EcCorrectionForm() {
 
   const handleCalculateK1 = () => {
     if (!targetEc || !selectedSerial) return alert("目標EC値を入力してください");
-    fetch(`${apiBase}/api/calculate-k1`, {
+    fetch(`/api/calculate-k1`, {
       method: "POST",
       headers: { "Content-Type": "application/json",
       Authorization: `Bearer ${token}`, 
@@ -92,7 +91,7 @@ export default function EcCorrectionForm() {
   const handleCalculateABC = () => {
     if (!targetEc || !selectedSerial) return alert("目標EC値を入力してください");
 
-    fetch(`${apiBase}/api/register-ec-log`, {
+    fetch(`/api/register-ec-log`, {
       method: "POST",
       headers: { "Content-Type": "application/json",
                   Authorization: `Bearer ${token}`, 
