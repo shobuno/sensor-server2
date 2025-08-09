@@ -1,6 +1,4 @@
 # docker-compose.yml
-# Compose v2 では version キーは不要です
-
 services:
   server:
     build: .
@@ -10,11 +8,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      mailpit:                          # ← 追加
+        condition: service_started
     env_file:
       - .env.docker
     volumes:
       - .:/app
-      - /app/node_modules        # ホストのnode_modules上書き回避（匿名ボリューム）
+      - /app/node_modules
     restart: unless-stopped
 
   db:
@@ -28,6 +28,7 @@ services:
       POSTGRES_PASSWORD: 13005tak
       POSTGRES_DB: sensor_data
       TZ: Asia/Tokyo
+    # ↓ Macでローカル接続用。Pi本番では外部公開しないなら削除/コメントアウト推奨
     ports:
       - "5432:5432"
     volumes:
@@ -41,18 +42,25 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: hydrosense-tunnel
-    # 正規トークンでの起動（匿名起動を避ける）
     command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
     env_file:
-      - .env        # ← TUNNEL_TOKEN をここに保存する想定（.env.dockerでも可）
+      - .env
     restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_started
 
   mailpit:
-    image: axllent/mailpit:latest   # arm64対応のMailhog代替
+    image: axllent/mailpit:latest
     container_name: mailpit
+    # Macテスト：外部公開でOK
+    # ports:
+    #   - "1025:1025"
+    #   - "8025:8025"
+    # Pi本番：ローカル限定公開（管理端末からSSHポートフォワードで閲覧推奨）
     ports:
-      - "1025:1025"  # SMTP
-      - "8025:8025"  # Web UI
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
     restart: unless-stopped
 
 volumes:

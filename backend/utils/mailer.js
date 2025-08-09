@@ -1,22 +1,28 @@
 // sensor-server/backend/utils/mailer.js
-
 const nodemailer = require('nodemailer');
 
+// nodemailer トランスポート設定
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'localhost',
-  port: Number(process.env.SMTP_PORT || 1025),
-  secure: process.env.SMTP_SECURE === 'true', // MailHogはfalse
-  auth: process.env.SMTP_USER
-    ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+  host: process.env.MAIL_HOST || 'localhost',
+  port: Number(process.env.MAIL_PORT || 1025),
+  secure: process.env.MAIL_SECURE === 'true', // Mailpitはfalse
+  auth: (process.env.MAIL_USER && process.env.MAIL_PASS)
+    ? { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS }
     : undefined,
 });
+
+/**
+ * メールアドレス確認メール送信
+ * @param {string} to - 送信先メールアドレス
+ * @param {string} token - 認証用トークン
+ * @param {string} [verifyUrl] - カスタムURL（省略時はFRONTEND_BASE_URLから生成）
+ */
 async function sendVerificationEmail(to, token, verifyUrl) {
-    // ルーター側から verifyUrl が渡されればそれを使う。なければ .env から生成
-    const base = process.env.FRONTEND_BASE_URL || 'http://localhost:3000';
-    const url = verifyUrl || `${base}/verify-email?token=${token}`;
+  const base = process.env.FRONTEND_BASE_URL || 'http://localhost:5173';
+  const url = verifyUrl || `${base}/verify-email?token=${token}`;
 
   return transporter.sendMail({
-    from: process.env.SMTP_FROM || 'HydroSense <no-reply@shobuno.local>',
+    from: process.env.MAIL_FROM || 'HydroSense <no-reply@shobuno.local>',
     to,
     subject: 'メールアドレスの確認',
     text: `以下のURLを開いて認証を完了してください: ${url}`,
