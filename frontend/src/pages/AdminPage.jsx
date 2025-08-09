@@ -10,7 +10,6 @@ export default function AdminPage() {
   const [editingUserId, setEditingUserId] = useState(null);
   const [editedUser, setEditedUser] = useState({});
   const [newPassword, setNewPassword] = useState('');
-  const [registerMessage, setRegisterMessage] = useState('');
 
   useEffect(() => { fetchUsers(); }, []);
 
@@ -24,14 +23,13 @@ export default function AdminPage() {
   };
 
   const handleAddUser = async () => {
-    const res = await fetchJson('/api/admin/users', {
+    await fetchJson('/api/admin/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newUser),
     });
     setNewUser({ email: '', name: '', role: 'user', password: '' });
     await fetchUsers();
-    setRegisterMessage(`✅ ${res.message}（開発用リンク: ${res.verificationLink}`);
   };
 
   const startEdit = (user) => {
@@ -58,7 +56,6 @@ export default function AdminPage() {
 
   return (
     <>
-      {/* ← 先頭に出す（必要なら TopBar.jsx を sticky にしてOK） */}
       <TopBar title="管理者メニュー" />
 
       <div className="mx-auto max-w-5xl p-4">
@@ -144,25 +141,6 @@ export default function AdminPage() {
           </select>
           <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={handleAddUser}>登録</button>
         </div>
-
-        {registerMessage && (
-          <div className="mt-3 text-sm">
-            {registerMessage.includes('http') ? (() => {
-              const urlMatch = registerMessage.match(/http:\/\/[^\s)]+/);
-              const rawUrl = urlMatch ? urlMatch[0] : null;
-              const url = rawUrl ? rawUrl.replace(/\)$/, '') : null;
-              return (
-                <span className="text-green-700">
-                  ✅ ユーザー登録完了（開発用リンク）：{url ? <a className="underline" href={url} target="_blank" rel="noopener noreferrer">{url}</a> : 'リンクが抽出できませんでした'}
-                </span>
-              );
-            })() : (
-              <span className={registerMessage.startsWith('✅') ? 'text-green-700' : 'text-red-600'}>
-                {registerMessage}
-              </span>
-            )}
-          </div>
-        )}
       </div>
     </>
   );
