@@ -1,25 +1,20 @@
 // sensor-server/frontend/src/RequireAuth.jsx
+import { Navigate, useLocation } from 'react-router-dom';
+import { getToken, getRole } from './auth';
 
-import { Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { getToken } from './auth';
+export default function RequireAuth({ children, role }) {
+  const token = getToken();
+  const userRole = getRole();
+  const location = useLocation();
 
-export default function RequireAuth({ children }) {
-  const [tokenChecked, setTokenChecked] = useState(false);
-  const [hasToken, setHasToken] = useState(false);
-
-  useEffect(() => {
-    const token = getToken();
-    setHasToken(!!token);
-    setTokenChecked(true);
-  }, []);
-
-  if (!tokenChecked) {
-    return null; // ✅ 一旦何も表示しない（スケルトン化も可能）
+  // 未ログインなら即リダイレクト
+  if (!token) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (!hasToken) {
-    return <Navigate to="/login" replace />;
+  // role指定があって一致しなければメニューへ
+  if (role && userRole !== role) {
+    return <Navigate to="/menu" replace />;
   }
 
   return children;

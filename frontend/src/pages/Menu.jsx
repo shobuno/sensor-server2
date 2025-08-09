@@ -25,7 +25,11 @@ export default function Menu() {
         if (!res.ok) throw new Error('認証エラー');
         return res.json();
       })
-      .then(data => setUser(data))
+      .then(data => {
+        const role = String(data.role || '').toLowerCase();
+        localStorage.setItem('role', role);  // ★ ここ大事！
+        setUser({ ...data, role });
+      })
       .catch((err) => {
         console.error('🚨 認証失敗:', err);
         logout();

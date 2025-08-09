@@ -31,6 +31,18 @@ export default function Login() {
       }
 
       localStorage.setItem('token', data.token);
+
+      // 1) レスポンスにroleがあれば即保存
+      if (data.role) {
+        localStorage.setItem('role', String(data.role).toLowerCase());
+      } else {
+        // 2) なければ /api/auth/me で取得
+        try {
+          const meRes = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${data.token}` }});
+          const me = await meRes.json();
+          localStorage.setItem('role', String(me.role || '').toLowerCase());
+        } catch {}
+      }
       navigate('/menu');
     } catch (err) {
       setError('通信エラーが発生しました');
