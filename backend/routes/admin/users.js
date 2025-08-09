@@ -6,6 +6,7 @@ const db = require('../../config/db');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../../.env') });
+const { sendVerificationEmail } = require('../../utils/mailer');
 
 // ユーザー一覧（既存のGET処理）
 router.get('/', async (req, res) => {
@@ -21,6 +22,13 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: 'ユーザー一覧の取得に失敗しました' });
   }
 });
+
+function getBaseUrl(req) {
+  if (process.env.FRONTEND_BASE_URL) return process.env.FRONTEND_BASE_URL;
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http');
+  const host  = (req.headers['x-forwarded-host']  || req.get('host'));
+  return `${proto}://${host}`;
+}
 
 // ✅ ユーザー登録と認証トークン生成
 router.post('/', async (req, res) => {
@@ -59,10 +67,22 @@ router.post('/', async (req, res) => {
       [newUserId, token, expiresAt]
     );
 
-    res.json({
-      message: 'ユーザー登録完了',
-      verificationLink: `${process.env.FRONTEND_BASE_URL}/verify-email?token=${token}`
-    });
+    // ★ 認証メール送信（失敗しても登録自体は成功にする方針）
+   try {
+     const base = getBaseUrl(req);
+     const verifyUrl = `${base}/verify-email?token=${token}`;
+     await sendVerificationEmail(email, token, verifyUrl);
+
+    } catch (e) {
+      console.error('Send verification email failed:', e);
+      // 必要ならここで return res.status(500)... にしてもOK
+    }
+   // レスポンスのリンクも同じものを返すとデバッグしやすい
+   res.json({
+     message: 'ユーザー登録完了。認証メールを送信しました。',
+     verificationLink: `${getBaseUrl(req)}/verify-email?token=${token}`
+   });
+
   } catch (err) {
     console.error('Admin User Registration Error:', err);
     res.status(500).json({ error: 'ユーザー登録に失敗しました' });
