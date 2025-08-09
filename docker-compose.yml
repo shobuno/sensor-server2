@@ -1,4 +1,5 @@
-version: "3.8"
+# docker-compose.yml
+# Compose v2 では version キーは不要です
 
 services:
   server:
@@ -7,40 +8,48 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     env_file:
       - .env.docker
     volumes:
       - .:/app
-    restart: always
+      - /app/node_modules        # ホストのnode_modules上書き回避（匿名ボリューム）
+    restart: unless-stopped
 
   db:
     image: postgres:15
     container_name: hydrosense-db
-    restart: always
+    restart: unless-stopped
     env_file:
       - .env.docker
     environment:
-      POSTGRES_USER: nobu                # ✅ 必須（明示）
-      POSTGRES_PASSWORD: 13005tak        # ✅ 必須（.env.dockerで上書きもOK）
-      POSTGRES_DB: sensor_data           # ✅ 初期DB名（任意）
-      TZ: Asia/Tokyo                     # ✅ タイムゾーン
+      POSTGRES_USER: nobu
+      POSTGRES_PASSWORD: 13005tak
+      POSTGRES_DB: sensor_data
+      TZ: Asia/Tokyo
     ports:
       - "5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: hydrosense-tunnel
-    command: tunnel run
-    environment:
-      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
-    restart: "no"
-    
-  mailhog:
-    image: mailhog/mailhog:latest
-    container_name: mailhog
+    # 正規トークンでの起動（匿名起動を避ける）
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    env_file:
+      - .env        # ← TUNNEL_TOKEN をここに保存する想定（.env.dockerでも可）
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest   # arm64対応のMailhog代替
+    container_name: mailpit
     ports:
       - "1025:1025"  # SMTP
       - "8025:8025"  # Web UI
