@@ -1,8 +1,8 @@
-
-
 // sensor-server/frontend/src/pages/AdminPage.jsx
+
 import { useEffect, useState } from 'react';
-import { getToken } from '../auth';
+import TopBar from '@/components/TopBar';
+import { fetchJson } from '@/auth';
 
 export default function AdminPage() {
   const [users, setUsers] = useState([]);
@@ -12,16 +12,10 @@ export default function AdminPage() {
   const [newPassword, setNewPassword] = useState('');
   const [registerMessage, setRegisterMessage] = useState('');
 
-
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  useEffect(() => { fetchUsers(); }, []);
 
   const fetchUsers = async () => {
-    const res = await fetch('/api/admin/users', {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    });
-    const data = await res.json();
+    const data = await fetchJson('/api/admin/users');
     setUsers(data);
   };
 
@@ -29,26 +23,16 @@ export default function AdminPage() {
     setNewUser({ ...newUser, [e.target.name]: e.target.value });
   };
 
-    const handleAddUser = async () => {
-    const res = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${getToken()}`,
-        },
-        body: JSON.stringify(newUser),
+  const handleAddUser = async () => {
+    const res = await fetchJson('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newUser),
     });
-
-    const result = await res.json();
-
-    if (res.ok) {
-        setNewUser({ email: '', name: '', role: 'user', password: '' });
-        fetchUsers();
-        setRegisterMessage(`✅ ${result.message}（開発用リンク: ${result.verificationLink}`);
-    } else {
-        setRegisterMessage(`❌ ${result.error || '登録に失敗しました'}`);
-    }
-    };
+    setNewUser({ email: '', name: '', role: 'user', password: '' });
+    await fetchUsers();
+    setRegisterMessage(`✅ ${res.message}（開発用リンク: ${res.verificationLink}`);
+  };
 
   const startEdit = (user) => {
     setEditingUserId(user.id);
@@ -61,123 +45,125 @@ export default function AdminPage() {
   };
 
   const handleSaveEdit = async (userId) => {
-    const res = await fetch(`/api/admin/users/${userId}`, {
+    await fetchJson(`/api/admin/users/${userId}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${getToken()}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...editedUser, password: newPassword || undefined }),
     });
-    if (res.ok) {
-      setEditingUserId(null);
-      setEditedUser({});
-      setNewPassword('');
-      fetchUsers();
-    }
+    setEditingUserId(null);
+    setEditedUser({});
+    setNewPassword('');
+    fetchUsers();
   };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h2>管理者専用ページ</h2>
-      <h3>会員一覧</h3>
-      <table border="1" cellPadding="6">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>メール</th>
-            <th>名前</th>
-            <th>権限</th>
-            <th>登録日</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user) => (
-            <tr key={user.id}>
-              <td>{user.id}</td>
-              <td>{user.email}</td>
-              <td>
-                {editingUserId === user.id ? (
-                  <input
-                    name="name"
-                    value={editedUser.name || ''}
-                    onChange={handleEditChange}
-                  />
-                ) : (
-                  user.name
-                )}
-              </td>
-              <td>
-                {editingUserId === user.id ? (
-                  <select name="role" value={editedUser.role} onChange={handleEditChange}>
-                    <option value="user">user</option>
-                    <option value="admin">admin</option>
-                  </select>
-                ) : (
-                  user.role
-                )}
-              </td>
-              <td>{new Date(user.created_at).toLocaleString()}</td>
-              <td>
-                {editingUserId === user.id ? (
-                  <>
-                    <input
-                      type="password"
-                      placeholder="新パスワード（空で変更なし）"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                    />
-                    <br />
-                    <button onClick={() => handleSaveEdit(user.id)}>保存</button>
-                    <button onClick={() => setEditingUserId(null)}>キャンセル</button>
-                  </>
-                ) : (
-                  <button onClick={() => startEdit(user)}>編集</button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <>
+      {/* ← 先頭に出す（必要なら TopBar.jsx を sticky にしてOK） */}
+      <TopBar title="管理者メニュー" />
 
-      <h3>新規ユーザー登録</h3>
-      <div style={{ display: 'flex', flexDirection: 'column', width: 300 }}>
-        <input type="text" name="email" placeholder="メール" value={newUser.email} onChange={handleInputChange} />
-        <input type="text" name="name" placeholder="名前" value={newUser.name} onChange={handleInputChange} />
-        <input type="password" name="password" placeholder="パスワード" value={newUser.password} onChange={handleInputChange} />
-        <select name="role" value={newUser.role} onChange={handleInputChange}>
-          <option value="user">user</option>
-          <option value="admin">admin</option>
-        </select>
-        <button onClick={handleAddUser}>登録</button>
-      </div>
-        {registerMessage && (
-        <div style={{ marginTop: '1em', color: registerMessage.startsWith('✅') ? 'green' : 'red' }}>
-            {registerMessage.includes('http') ? (
-            (() => {
-                const urlMatch = registerMessage.match(/http:\/\/[^\s)]+/);
-                const rawUrl = urlMatch ? urlMatch[0] : null;
-                const url = rawUrl ? rawUrl.replace(/\)$/, '') : null; // ← 末尾の ) を削除
-                return (
-                <>
-                    ✅ ユーザー登録完了（開発用リンク）：
-                    {url ? (
-                    <a href={url} target="_blank" rel="noopener noreferrer">
-                        {url}
-                    </a>
+      <div className="mx-auto max-w-5xl p-4">
+        <h2 className="text-2xl font-bold mb-4">管理者専用ページ</h2>
+        <h3 className="text-lg font-semibold mb-2">会員一覧</h3>
+
+        <div className="overflow-x-auto rounded-lg border">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr className="text-left">
+                <th className="px-3 py-2">ID</th>
+                <th className="px-3 py-2">メール</th>
+                <th className="px-3 py-2">名前</th>
+                <th className="px-3 py-2">権限</th>
+                <th className="px-3 py-2">登録日</th>
+                <th className="px-3 py-2">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id} className="border-t">
+                  <td className="px-3 py-2">{user.id}</td>
+                  <td className="px-3 py-2 break-all">{user.email}</td>
+                  <td className="px-3 py-2">
+                    {editingUserId === user.id ? (
+                      <input
+                        name="name"
+                        className="border rounded px-2 py-1"
+                        value={editedUser.name || ''}
+                        onChange={handleEditChange}
+                      />
                     ) : (
-                    'リンクが抽出できませんでした'
+                      user.name
                     )}
-                </>
-                );
-            })()
-            ) : (
-            registerMessage
-            )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {editingUserId === user.id ? (
+                      <select
+                        name="role"
+                        className="border rounded px-2 py-1"
+                        value={editedUser.role}
+                        onChange={handleEditChange}
+                      >
+                        <option value="user">user</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    ) : (
+                      user.role
+                    )}
+                  </td>
+                  <td className="px-3 py-2">{new Date(user.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-2">
+                    {editingUserId === user.id ? (
+                      <div className="space-x-2">
+                        <input
+                          type="password"
+                          placeholder="新パスワード（空で変更なし）"
+                          className="border rounded px-2 py-1"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                        />
+                        <button className="px-2 py-1 rounded bg-blue-600 text-white" onClick={() => handleSaveEdit(user.id)}>保存</button>
+                        <button className="px-2 py-1 rounded bg-gray-200" onClick={() => setEditingUserId(null)}>キャンセル</button>
+                      </div>
+                    ) : (
+                      <button className="px-2 py-1 rounded bg-gray-100" onClick={() => startEdit(user)}>編集</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        )}
 
-    </div>
+        <h3 className="text-lg font-semibold mt-6 mb-2">新規ユーザー登録</h3>
+        <div className="flex flex-col gap-2 w-full max-w-sm">
+          <input type="text" name="email" placeholder="メール" className="border rounded px-3 py-2" value={newUser.email} onChange={handleInputChange} />
+          <input type="text" name="name" placeholder="名前" className="border rounded px-3 py-2" value={newUser.name} onChange={handleInputChange} />
+          <input type="password" name="password" placeholder="パスワード" className="border rounded px-3 py-2" value={newUser.password} onChange={handleInputChange} />
+          <select name="role" className="border rounded px-3 py-2" value={newUser.role} onChange={handleInputChange}>
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
+          <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={handleAddUser}>登録</button>
+        </div>
+
+        {registerMessage && (
+          <div className="mt-3 text-sm">
+            {registerMessage.includes('http') ? (() => {
+              const urlMatch = registerMessage.match(/http:\/\/[^\s)]+/);
+              const rawUrl = urlMatch ? urlMatch[0] : null;
+              const url = rawUrl ? rawUrl.replace(/\)$/, '') : null;
+              return (
+                <span className="text-green-700">
+                  ✅ ユーザー登録完了（開発用リンク）：{url ? <a className="underline" href={url} target="_blank" rel="noopener noreferrer">{url}</a> : 'リンクが抽出できませんでした'}
+                </span>
+              );
+            })() : (
+              <span className={registerMessage.startsWith('✅') ? 'text-green-700' : 'text-red-600'}>
+                {registerMessage}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

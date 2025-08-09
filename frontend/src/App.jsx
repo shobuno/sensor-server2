@@ -12,6 +12,7 @@ import AutoMeshLayout from '@auto-mesh/AutoMeshLayout';
 import DeviceControl from '@auto-mesh/pages/DeviceControl';
 import ScheduleManager from '@auto-mesh/pages/ScheduleManager';
 import DeviceManager from '@auto-mesh/pages/DeviceManager';
+import TopBar from './components/TopBar';
 
 export default function App() {
   return (
@@ -30,7 +31,15 @@ export default function App() {
         <Route
           key={`hydro-${i}`}
           path={`/hydro-sense/${route.path}`}
-          element={<RequireAuth>{route.element}</RequireAuth>}
+          element={
+            <RequireAuth>
+              <>
+                <TopBar title="Hydro Sense" />
+                {route.element}
+              </>
+            </RequireAuth>
+          }
+
         />
       ))}
 
