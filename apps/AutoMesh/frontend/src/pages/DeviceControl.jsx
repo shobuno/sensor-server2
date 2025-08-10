@@ -44,11 +44,29 @@ export default function DeviceControl() {
       );
 
       setDevices(combined);
-
-      // 明るさはとりあえず既定4で初期化（サーバで保持するならここで取得）
-      const init = {};
-      combined.forEach(d => { if (!(d.serial_number in init)) init[d.serial_number] = 4; });
-      setBrightnessMap(prev => ({ ...init, ...prev }));
+      // 新：装置へ現在値を問い合わせて初期反映
+      const uniqueSerials = [...new Set(combined.map(d => d.serial_number))];
+      const statusList = await fetchJson('/automesh/api/device-status/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serial_numbers: uniqueSerials }),
+      });
+      const map = {};
+      statusList.forEach(s => {
+        if (s.online && typeof s.led_brightness === 'number') {
+          map[s.serial_number] = s.led_brightness;   // 実機の現在値
+        }
+      });
+      // 取れなかったシリアルは【以前の値】を維持し、無ければ4
+      setBrightnessMap(prev => {
+        const next = { ...prev };
+        uniqueSerials.forEach(sn => {
+          if (sn in map) next[sn] = map[sn];
+          else if (!(sn in next)) next[sn] = 4;
+          // sn が prev にあればそのまま維持
+        });
+        return next;
+      });
     } catch (e) {
       console.error('fetchData failed:', e);
     }
@@ -88,6 +106,7 @@ export default function DeviceControl() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ serial_number, level }),
       });
+      setTimeout(() => fetchData(), 300);
     } catch (e) {
       console.error('led-brightness failed:', e);
     }

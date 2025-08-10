@@ -3,7 +3,45 @@
 const path = require('path');
 const db = require(path.resolve(__dirname, '../config/db'));
 
+const { v4: uuid } = require('uuid');
 let commandClients = [];
+const pending = new Map(); // request_id -> { resolve, timer }
+
+
+// 装置に get-status を送り、status 応答を待つ
+async function queryStatus(serial, timeoutMs = 1500) {
+  const c = commandClients.find(x => x.serial_number === serial);
+  if (!c || c.ws?.readyState !== 1) return { serial_number: serial, online: false };
+
+  const request_id = uuid();
+  const payload = { type: 'get-status', request_id };
+
+  const p = new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pending.delete(request_id);
+      resolve({ serial_number: serial, online: true, timeout: true });
+    }, timeoutMs);
+    pending.set(request_id, { resolve, timer });
+  });
+
+  c.ws.send(JSON.stringify(payload));
+  const resp = await p;               // { type:'status', led_brightness, ... }
+  return { ...resp, online: true };
+}
+module.exports.queryStatus = queryStatus;
+
+// 受信メッセージで pending を解決する関数
+function handleDeviceMessage(serial, msg) {
+  // 既存の処理はそのまま…
+
+  if (msg.type === 'status' && msg.request_id && pending.has(msg.request_id)) {
+    const { resolve, timer } = pending.get(msg.request_id);
+    clearTimeout(timer);
+    pending.delete(msg.request_id);
+    resolve({ serial_number: serial, ...msg }); // 呼び出し側に返す
+  }
+}
+module.exports.handleDeviceMessage = handleDeviceMessage;
 
 function setupAutoMeshCommandWSS(wss) {
   wss.on('connection', (ws) => {
@@ -39,6 +77,11 @@ function setupAutoMeshCommandWSS(wss) {
 
         if (data.type === 'relay-state' && typeof data.relay_index === 'number') {
           updateRelayState(serial_number, data.relay_index, data.state);
+        }
+
+        // ★ 追加: 常にデバイスメッセージとしても処理（status 応答の解決など）
+        if (serial_number) {
+          handleDeviceMessage(serial_number, data);
         }
       } catch (err) {
         console.warn('❌ command parse エラー:', err);
@@ -111,4 +154,6 @@ module.exports = {
   getConnectedCommandSerials,
   updateRelayState,
   getRelayStates,
+  queryStatus,
+  handleDeviceMessage,
 };

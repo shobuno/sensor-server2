@@ -29,7 +29,7 @@ router.post('/', /*auth,*/ (req, res) => {
   const payload = { type: 'set-led-brightness', level };
   if (relay_index !== undefined) payload.relay_index = relay_index; // 未来対応（今は全体で使用）
 
-  console.log('[HTTP /led-brightness] →', serial_number, payload);
+  // console.log('[HTTP /led-brightness] →', serial_number, payload);
   try {
     send(serial_number, payload);
     return res.json({ ok: true });
