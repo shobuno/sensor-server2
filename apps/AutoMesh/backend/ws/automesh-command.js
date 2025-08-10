@@ -56,7 +56,7 @@ function sendCommandToDevice(serial_number, message) {
   const client = commandClients.find(c => c.serial_number === serial_number);
   if (client && client.ws.readyState === client.ws.OPEN) {
     client.ws.send(JSON.stringify(message));
-    console.log(`💡 Command送信: ${serial_number}`, message);
+    // console.log(`💡 Command送信: ${serial_number}`, message);
   } else {
     console.warn(`⚠️ Command送信失敗: ${serial_number} は未接続`);
   }
