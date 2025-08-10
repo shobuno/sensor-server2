@@ -54,6 +54,17 @@ export default function AdminPage() {
     fetchUsers();
   };
 
+  // ★ 追加: 削除処理（確認ダイアログあり）
+  const handleDeleteUser = async (user) => {
+    const ok = window.confirm(`本当に削除しますか？\n\n- 対象: ${user.name || user.email}\n- users レコード\n- email_verifications レコード\n\nこれらを削除します。`);
+    if (!ok) return;
+
+    await fetchJson(`/api/admin/users/${user.id}`, {
+      method: 'DELETE',
+    });
+    await fetchUsers();
+  };
+
   return (
     <>
       <TopBar title="管理者メニュー" />
@@ -109,7 +120,7 @@ export default function AdminPage() {
                   <td className="px-3 py-2">{new Date(user.created_at).toLocaleString()}</td>
                   <td className="px-3 py-2">
                     {editingUserId === user.id ? (
-                      <div className="space-x-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <input
                           type="password"
                           placeholder="新パスワード（空で変更なし）"
@@ -117,11 +128,35 @@ export default function AdminPage() {
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
                         />
-                        <button className="px-2 py-1 rounded bg-blue-600 text-white" onClick={() => handleSaveEdit(user.id)}>保存</button>
-                        <button className="px-2 py-1 rounded bg-gray-200" onClick={() => setEditingUserId(null)}>キャンセル</button>
+                        <button
+                          className="px-2 py-1 rounded bg-blue-600 text-white"
+                          onClick={() => handleSaveEdit(user.id)}
+                        >
+                          保存
+                        </button>
+                        <button
+                          className="px-2 py-1 rounded bg-gray-200"
+                          onClick={() => setEditingUserId(null)}
+                        >
+                          キャンセル
+                        </button>
                       </div>
                     ) : (
-                      <button className="px-2 py-1 rounded bg-gray-100" onClick={() => startEdit(user)}>編集</button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="px-2 py-1 rounded bg-gray-100"
+                          onClick={() => startEdit(user)}
+                        >
+                          編集
+                        </button>
+                        <button
+                          className="px-2 py-1 rounded bg-red-600 text-white"
+                          onClick={() => handleDeleteUser(user)}
+                          title="この会員と関連するメール認証情報を削除します"
+                        >
+                          削除
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

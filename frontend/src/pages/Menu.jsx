@@ -49,7 +49,7 @@ export default function Menu() {
     <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 px-2">
       <div className="bg-white dark:bg-gray-800 p-8 rounded shadow-md w-full max-w-2xl">
         <h2 className="text-3xl sm:text-2xl font-bold text-center mb-12 text-gray-900 dark:text-white break-words">
-          ようこそ、<span className="block">{user.email} さん</span>
+          ようこそ、<span className="block">{user.name} さん</span>
         </h2>
         <p className="text-center mb-8 text-xl sm:text-lg text-gray-900 dark:text-gray-200">権限: {user.role}</p>
 

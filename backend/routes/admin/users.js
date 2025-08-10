@@ -89,4 +89,38 @@ router.post('/', async (req, res) => {
   }
 });
 
+// ★ 追加: ユーザー削除（email_verificationsも同時に削除）
+router.delete('/:id', async (req, res) => {
+  const userId = Number(req.params.id);
+
+  try {
+    const result = await db.query(
+      `
+      WITH del_ev AS (
+        DELETE FROM auth.email_verifications WHERE user_id = $1
+      ),
+      del_sessions AS (
+        DELETE FROM auth.sessions WHERE user_id = $1
+      ),
+      del_user AS (
+        DELETE FROM auth.users
+        WHERE id = $1
+        RETURNING id, email, name, role, created_at
+      )
+      SELECT * FROM del_user;
+      `,
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: '対象ユーザーが見つかりません' });
+    }
+
+    res.json({ ok: true, deleted: result.rows[0] });
+  } catch (err) {
+    console.error('Admin Delete User Error:', err);
+    res.status(500).json({ error: 'ユーザー削除に失敗しました' });
+  }
+});
+
 module.exports = router;
