@@ -18,6 +18,7 @@ const deleteDeviceRouter = require('./routes/deleteDevice');
 const connectionStatusRouter = require('./routes/connectionStatus');
 const relayStatesRouter = require('./routes/relayStates');
 const scheduleRouter = require('./routes/schedule');
+const ledBrightnessRouter = require('./routes/ledBrightness');
 
 
 app.use(cors());
@@ -39,6 +40,7 @@ app.use('/unregister-device', deleteDeviceRouter);
 app.use('/connection-status', connectionStatusRouter);
 app.use('/relay-states', relayStatesRouter);
 app.use('/schedule', scheduleRouter); 
+app.use('/led-brightness', ledBrightnessRouter);
 
 // ヘルスチェック
 app.get('/ping', (req, res) => {
