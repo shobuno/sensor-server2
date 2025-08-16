@@ -117,10 +117,7 @@ router.delete('/:id', async (req, res) => {
       )
       SELECT * FROM del_user;
     `;
-
-    console.log('Delete User ID:', userId);
-    console.log('Delete sql:', sql);
-
+    
     const result = await db.query(sql, [userId]);
 
     if (result.rows.length === 0) {
