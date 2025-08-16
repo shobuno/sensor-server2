@@ -74,20 +74,22 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: '溶液抵抗の計算に失敗（rw_ohm<=0）' });
     }
 
-    // --- 目標ECの25℃換算 ---
-    // ※ target_ec が「現温度の値」のときは以下で25℃へ換算。
-    //    もし target_ec が「25℃規格値」なら、下1行を： const ec25 = tgtEC;
-    const ec25 = tgtEC / (1 + alpha * (tempC - 25.0));
-    if (ec25 <= 0 || !isFinite(ec25)) {
+   // --- 目標EC（25℃基準）の決め方 ---
+   // 校正液や多くのハンディ計は「25℃補正後の値」を表示するため、
+   // target_ec は 25℃規格値(mS/cm)として扱うのが安全
+   const ec25_mScm = tgtEC; // もし現温度のECを入れる運用なら: tgtEC / (1 + alpha*(tempC-25))
+   if (ec25_mScm <= 0 || !isFinite(ec25_mScm)) {
       return res.status(400).json({ error: '目標EC(25℃換算)が不正です' });
-    }
+   }
 
-    // --- K1の正方向: K1 = EC25 × Rw ---
-    const k1 = ec25 * rw_ohm;
+    // --- K1の正方向: K1 = EC25[S/cm] × Rw[Ω]
+    const ec25_Scm = ec25_mScm / 1000.0;   // ★ mS/cm → S/cm に変換
+    const k1 = ec25_Scm * rw_ohm;          // 単位整合
+
 
     // ログ用の参考値
-    const ec_w_raw = 1000.0 * (k1 / rw_ohm); // mS/cm（現温度相当の概算）
-    const ec_w_25  = ec25 * 1000.0;          // mS/cm（25℃換算）
+    const ec_w_raw = 1000.0 * (k1 / rw_ohm);   // mS/cm（現温度相当の概算）
+    const ec_w_25  = ec25_mScm;                // mS/cm（25℃換算）
 
     // --- 保存 ---
     await db.query(
