@@ -89,28 +89,39 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ★ 追加: ユーザー削除（email_verificationsも同時に削除）
+// DELETE /api/admin/users/:id
 router.delete('/:id', async (req, res) => {
-  const userId = Number(req.params.id);
-
   try {
-    const result = await db.query(
-      `
+    const userId = String(req.params.id).trim(); // ← Numberにしない
+
+    
+
+    // （任意）UUIDの軽いバリデーション
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) {
+      return res.status(400).json({ error: 'invalid uuid' });
+    }
+
+    // 依存データを別途消す必要が無ければ、FKを ON DELETE CASCADE にして users だけ消すのが楽。
+    // ここでは手動削除の形を残したいケースに合わせてCTEで書いてあります。
+    const sql = `
       WITH del_ev AS (
-        DELETE FROM auth.email_verifications WHERE user_id = $1
+        DELETE FROM auth.email_verifications WHERE user_id = $1::uuid
       ),
       del_sessions AS (
-        DELETE FROM auth.sessions WHERE user_id = $1
+        DELETE FROM auth.sessions WHERE user_id = $1::uuid
       ),
       del_user AS (
         DELETE FROM auth.users
-        WHERE id = $1
+        WHERE id = $1::uuid
         RETURNING id, email, name, role, created_at
       )
       SELECT * FROM del_user;
-      `,
-      [userId]
-    );
+    `;
+
+    console.log('Delete User ID:', userId);
+    console.log('Delete sql:', sql);
+
+    const result = await db.query(sql, [userId]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: '対象ユーザーが見つかりません' });
@@ -122,5 +133,6 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: 'ユーザー削除に失敗しました' });
   }
 });
+
 
 module.exports = router;
