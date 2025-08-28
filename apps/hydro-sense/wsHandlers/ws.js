@@ -21,6 +21,6 @@ module.exports = function setupHydroWS(ws) {
   });
 
   ws.on('close', () => {
-    console.log('[HydroSense WS] 接続終了');
+    //console.log('[HydroSense WS] 接続終了');
   });
 };

@@ -31,47 +31,91 @@ export default function LatestData() {
   const [graphData, setGraphData] = useState([]);
   const [isDark, setIsDark] = useState(false);
 
+
   const fetchData = async () => {
     try {
-      const res = await fetch(`/api/latest`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        credentials: 'include'
+      const res = await fetch(`/api/hydro/latest`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
       });
 
       if (res.status === 401) {
         logout();
-        window.location.href = '/login';  // 強制リロードで状態をリセット
+        window.location.href = '/login';
         return;
       }
 
-      if (!res.ok) {
+      let json = {};
+      if (res.ok) {
+        try {
+          json = await res.json();
+        } catch {
+          json = {};
+        }
+      } else {
         const text = await res.text();
-        console.error("❌ /api/latest fetch failed. Status:", res.status, "Body:", text);
-        throw new Error('レスポンスが異常です');
+        console.error("❌ /api/hydro/latest failed:", res.status, text);
       }
 
-      const json = await res.json();
-      if (!json || Object.keys(json).length === 0) throw new Error('データが空です');
+      // フィールド名ゆらぎに対応したフォールバック
+      const ts =
+        json.timestamp ??
+        json.time ??
+        json.measured_at ??
+        null;
 
+      const temp =
+        json.temperature ??
+        json.air_temperature ??
+        json.air_avg ??
+        null;
+
+      const wtemp =
+        json.water_temperature ??
+        json.water_temp ??
+        json.water_avg ??
+        null;
+
+      const ecRaw =
+        json.ec ??
+        json.ec_raw ??
+        null;
+
+      const ecCorr =
+        json.ec25_corrected ??
+        json.ec_corrected ??
+        json.ec_adj ??
+        null;
+
+      const level =
+        json.water_level ??
+        json.level ??
+        null;
+
+      // 値が無くても data はセット（ローディングを抜ける）
       setData({
-        timestamp: json.timestamp ?? null,
-        temperature: json.temperature ?? null,
-        water_temperature: json.water_temperature ?? null,
-        ec: json.ec ?? null,
-        ec25_corrected: json.ec25_corrected ?? null,
-        water_level: json.water_level ?? null,
+        timestamp: ts,
+        temperature: temp,
+        water_temperature: wtemp,
+        ec: ecRaw,
+        ec25_corrected: ecCorr,
+        water_level: level,
       });
-
       setError(null);
     } catch (err) {
       console.error('🔥 fetch エラー:', err);
+      // エラー時も空データで描画へ進む
+      setData({
+        timestamp: null, temperature: null, water_temperature: null,
+        ec: null, ec25_corrected: null, water_level: null,
+      });
       setError('データ取得に失敗しました');
     }
   };
 
   const fetchGraphData = async () => {
     try {
-      const res = await fetch(`/api/ec-graph?range=1d&type=all`, {
+      const res = await fetch(`/api/hydro/ec-graph?range=1d&type=all`, {
         headers: { 'Authorization': `Bearer ${token}` },
         credentials: 'include'
       });
@@ -149,6 +193,19 @@ export default function LatestData() {
       0: "text-red-500"
     }[level] ?? "bg-gray-500";
   };
+  
+
+ // ---- 表示フォーマッタ ----
+ const fmt = (v, digits) => {
+   const n = Number(v);
+   if (v === null || v === undefined || Number.isNaN(n)) return '--';
+   const s = n.toFixed(digits);
+   // -0.0 / -0.00 を 0.0 / 0.00 に
+   return s.startsWith('-0.') ? s.slice(1) : s;
+ };
+ const fmt1 = (v) => fmt(v, 1); // 気温・水温: 1桁
+ const fmt2 = (v) => fmt(v, 2); // EC: 2桁
+
 
   return (
     <div className="bg-white dark:bg-gray-900 w-full min-h-screen text-gray-900 dark:text-white px-2 sm:px-4 py-6 flex flex-col">
@@ -188,15 +245,15 @@ export default function LatestData() {
                 <div className="flex flex-row md:flex-col gap-0.5 w-full">
                   <div className="bg-gray-200 dark:bg-gray-700 px-0 py-2 rounded-xl text-center flex-1 md:mb-4">
                     <div className="text-xs md:text-base text-gray-600 dark:text-gray-300">気温</div>
-                    <div className="text-4xl md:text-6xl font-bold text-green-600 dark:text-green-400">{Number(data.temperature).toFixed(1)}</div>
+                    <div className="text-4xl md:text-6xl font-bold text-green-600 dark:text-green-400">{fmt1(data.temperature) ?? '--'}</div>
                   </div>
                   <div className="bg-gray-200 dark:bg-gray-700 px-0 py-2 rounded-xl text-center flex-1 md:mb-4">
                     <div className="text-xs md:text-base text-gray-600 dark:text-gray-300">水温</div>
-                    <div className="text-4xl md:text-6xl font-bold text-blue-600 dark:text-blue-400">{Number(data.water_temperature).toFixed(1)}</div>
+                    <div className="text-4xl md:text-6xl font-bold text-blue-600 dark:text-blue-400">{fmt1(data.water_temperature) ?? '--'}</div>
                   </div>
                   <div className="bg-gray-200 dark:bg-gray-700 px-0 py-2 rounded-xl text-center flex-1">
                     <div className="text-xs md:text-base text-gray-600 dark:text-gray-300">EC</div>
-                    <div className="text-4xl md:text-6xl font-bold text-red-500 dark:text-red-400">{Number(data.ec25_corrected).toFixed(2)}</div>
+                    <div className="text-4xl md:text-6xl font-bold text-red-500 dark:text-red-400">{fmt2(data.ec25_corrected) ?? '--'}</div>
                   </div>
                 </div>
                 <p className="text-sm md:text-base text-right text-gray-400 mt-1">EC元値: {data.ec ?? '--'}</p>

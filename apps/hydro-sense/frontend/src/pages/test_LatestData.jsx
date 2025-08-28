@@ -9,7 +9,7 @@ export default function LatestData() {
   // console.log("✅ LatestData コンポーネント内: useNavigate呼び出し OK");
 
   useEffect(() => {
-    console.log("✅ location.pathname =", location.pathname);
+    //console.log("✅ location.pathname =", location.pathname);
   }, [location]);
 
   return <div>LatestData 表示中</div>;

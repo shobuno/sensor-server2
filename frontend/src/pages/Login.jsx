@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 export default function Login() {
   useEffect(() => {
-    console.log("✅ Login useEffect fired");
+    //console.log("✅ Login useEffect fired");
   }, []);
 
   const [email, setEmail] = useState('');
@@ -21,32 +21,46 @@ export default function Login() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // Cookie 方式にも備えて include（同一オリジンなら害なし）
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
         setError(data.error || 'ログインに失敗しました');
         return;
       }
 
-      localStorage.setItem('token', data.token);
-
-      // 1) レスポンスにroleがあれば即保存
-      if (data.role) {
-        localStorage.setItem('role', String(data.role).toLowerCase());
-      } else {
-        // 2) なければ /api/auth/me で取得
-        try {
-          const meRes = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${data.token}` }});
-          const me = await meRes.json();
-          localStorage.setItem('role', String(me.role || '').toLowerCase());
-        } catch {}
+      // ① JWT返却（JSON）パターン
+      if (data.token) {
+        localStorage.setItem('authToken', data.token);
+        localStorage.removeItem('token'); // 旧キーを掃除
       }
+
+      // ② Cookieパターン or ①の後続：役割を取得して保存
+      const meRes = await fetch('/api/auth/me', {
+        credentials: 'include',
+        headers: {
+          // JWTヘッダ運用でも /me が通るよう付与（Cookie運用なら存在しなくてもOK）
+          Authorization: `Bearer ${localStorage.getItem('authToken') || ''}`,
+        },
+      });
+
+      if (meRes.ok) {
+        const me = await meRes.json();
+        // 旧role（単体）も、新roles（配列）もどちらも保存
+        if (me.role) localStorage.setItem('role', String(me.role).toLowerCase());
+        if (Array.isArray(me.roles)) localStorage.setItem('roles', JSON.stringify(me.roles));
+      } else {
+        console.warn('⚠️ /auth/me 取得失敗', meRes.status);
+      }
+
       navigate('/menu');
     } catch (err) {
-      setError('通信エラーが発生しました');
       console.error(err);
+      setError('通信エラーが発生しました');
     }
   };
 
@@ -57,28 +71,15 @@ export default function Login() {
         <form onSubmit={handleLogin} className="space-y-10">
           <div>
             <label className="block mb-4 font-medium text-2xl sm:text-xl text-gray-900 dark:text-gray-200">メールアドレス</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              className="w-full border border-gray-300 dark:border-gray-600 rounded px-6 py-4 text-2xl sm:text-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+              className="w-full border border-gray-300 dark:border-gray-600 rounded px-6 py-4 text-2xl sm:text-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
           </div>
           <div>
             <label className="block mb-4 font-medium text-2xl sm:text-xl text-gray-900 dark:text-gray-200">パスワード</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              className="w-full border border-gray-300 dark:border-gray-600 rounded px-6 py-4 text-2xl sm:text-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
+              className="w-full border border-gray-300 dark:border-gray-600 rounded px-6 py-4 text-2xl sm:text-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
           </div>
-          <button
-            type="submit"
-            className="w-full bg-blue-500 dark:bg-blue-600 text-white py-4 text-2xl sm:text-xl rounded hover:bg-blue-600 transition-colors"
-          >
+          <button type="submit" className="w-full bg-blue-500 dark:bg-blue-600 text-white py-4 text-2xl sm:text-xl rounded hover:bg-blue-600 transition-colors">
             ログイン
           </button>
         </form>

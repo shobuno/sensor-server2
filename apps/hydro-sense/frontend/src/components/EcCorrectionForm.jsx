@@ -26,7 +26,7 @@ export default function EcCorrectionForm() {
   // console.log("✅ apiBase is:", apiBase);
 
   useEffect(() => {
-    fetch(`/api/sensor-serials?type=water`, {
+    fetch(`/api/hydro/sensor-serials?type=water`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -38,7 +38,7 @@ export default function EcCorrectionForm() {
       })
       .catch(err => console.error("🔥 sensor-serials fetch error", err));
 
-    fetch(`/api/latest-hourly-avg`, {
+    fetch(`/api/hydro/latest-hourly-avg`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -52,7 +52,7 @@ export default function EcCorrectionForm() {
 
   useEffect(() => {
     if (selectedSerial && latestValues.ec_avg && latestValues.water_avg) {
-      fetch(`/api/calculate-ec-corrected`, {
+      fetch(`/api/hydro/calculate-ec-corrected`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -71,7 +71,7 @@ export default function EcCorrectionForm() {
 
   const handleCalculateK1 = () => {
     if (!targetEc || !selectedSerial) return alert("目標EC値を入力してください");
-    fetch(`/api/calculate-k1`, {
+    fetch(`/api/hydro/calculate-k1`, {
       method: "POST",
       headers: { "Content-Type": "application/json",
       Authorization: `Bearer ${token}`, 
@@ -91,7 +91,7 @@ export default function EcCorrectionForm() {
   const handleCalculateABC = () => {
     if (!targetEc || !selectedSerial) return alert("目標EC値を入力してください");
 
-    fetch(`/api/register-ec-log`, {
+    fetch(`/api/hydro/register-ec-log`, {
       method: "POST",
       headers: { "Content-Type": "application/json",
                   Authorization: `Bearer ${token}`, 

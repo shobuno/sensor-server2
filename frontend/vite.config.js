@@ -14,6 +14,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
       '@hydro-sense': path.resolve(__dirname, '../apps/hydro-sense/frontend/src'),
       '@auto-mesh': path.resolve(__dirname, '../apps/AutoMesh/frontend/src'),
+      '@todo': path.resolve(__dirname, '../apps/todo/frontend/src'),
       'react': path.resolve(__dirname, './node_modules/react'),
       'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
       'react-router-dom': path.resolve(__dirname, './node_modules/react-router-dom'),
@@ -24,15 +25,13 @@ export default defineConfig({
       plugins: [tailwindcss(), autoprefixer()],
     },
   },
-  server: {
-    host: '0.0.0.0',
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-        secure: false,
-      },
-    },
-  },
+ server: {
+   host: '0.0.0.0',
+   port: 5173,
+   proxy: {
+     '/api': { target: 'http://localhost:3000', changeOrigin: true, secure: false },
+   },
+   // ルート外（../apps/**）の参照を許可
+   fs: { allow: [ path.resolve(__dirname, '..') ] },
+ },
 });

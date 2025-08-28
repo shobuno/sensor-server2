@@ -1,6 +1,8 @@
 // sensor-server/frontend/src/App.jsx
+
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
+
 import Login from './pages/Login';
 import Menu from './pages/Menu';
 import AdminPage from './pages/AdminPage';
@@ -13,6 +15,22 @@ import DeviceControl from '@auto-mesh/pages/DeviceControl';
 import ScheduleManager from '@auto-mesh/pages/ScheduleManager';
 import DeviceManager from '@auto-mesh/pages/DeviceManager';
 import TopBar from './components/TopBar';
+// import FeatureGate from './components/FeatureGate'; // 使っていなければ一旦コメントアウト
+
+// ✅ Todo
+import TodoPage from '@todo/pages/TodoPage.jsx';
+// import TodayCloseView from '@todo/pages/TodayCloseView.jsx'; // サブルート化するなら使う
+// import TodoAdd from '@todo/pages/TodoAdd.jsx';               // 使う段階で有効化
+// import TodoClose from '@todo/pages/TodoClose.jsx';           // 廃止
+
+function TodoLayout() {
+  return (
+    <>
+      <TopBar title="Todo" />
+      <Outlet />
+    </>
+  );
+}
 
 export default function App() {
   return (
@@ -21,11 +39,11 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
 
-      {/* 認証必須 */}
+      {/* メニュー/管理 */}
       <Route path="/menu" element={<RequireAuth><Menu /></RequireAuth>} />
       <Route path="/admin" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
 
-      {/* HydroSense（各ルートをRequireAuthで包む） */}
+      {/* HydroSense */}
       <Route path="/hydro-sense" element={<Navigate to="/hydro-sense/menu" replace />} />
       {hydroSenseRoutes.map((route, i) => (
         <Route
@@ -39,11 +57,10 @@ export default function App() {
               </>
             </RequireAuth>
           }
-
         />
       ))}
 
-      {/* AutoMesh：親Layoutごと保護（配下は自動で保護される） */}
+      {/* AutoMesh */}
       <Route
         path="/auto-mesh"
         element={
@@ -52,13 +69,31 @@ export default function App() {
           </RequireAuth>
         }
       >
+        <Route index element={<Navigate to="control" replace />} />
         <Route path="control"   element={<DeviceControl />} />
         <Route path="schedules" element={<ScheduleManager />} />
         <Route path="devices"   element={<DeviceManager />} />
         <Route path="*" element={<p className="p-4">ページが見つかりません</p>} />
       </Route>
 
-      {/* fallback */}
+      {/* Todo */}
+      <Route path="/todo/today/*" element={<Navigate to="/todo" replace />} />
+      <Route
+        path="/todo"
+        element={
+          <RequireAuth feature="todo">
+            <TodoLayout />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<TodoPage />} />
+        {/* 必要になったらサブルートを追加:
+        <Route path="close" element={<TodayCloseView />} />
+        <Route path="add"   element={<TodoAdd />} />
+        */}
+      </Route>
+
+      {/* フォールバック */}
       <Route path="*" element={<Navigate to="/menu" replace />} />
     </Routes>
   );

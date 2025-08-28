@@ -1,5 +1,4 @@
 // sensor-server/frontend/src/pages/Menu.jsx
-
 import { getToken, logout } from '../auth';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -9,32 +8,46 @@ export default function Menu() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      console.warn('🔒 トークンが無いためログインへリダイレクト');
-      navigate('/login');
-      return;
-    }
+    let cancelled = false;
 
-    fetch('/api/auth/me', {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('認証エラー');
-        return res.json();
-      })
-      .then(data => {
-        const role = String(data.role || '').toLowerCase();
-        localStorage.setItem('role', role);  // ★ ここ大事！
-        setUser({ ...data, role });
-      })
-      .catch((err) => {
-        console.error('🚨 認証失敗:', err);
+    (async () => {
+      const token = getToken();
+
+      // RequireAuthで守られているので、ここでは強制遷移はしない
+      // そのまま /auth/me で最終確認（Cookie or Bearer 両対応）
+      try {
+        const res = await fetch('/api/auth/me', {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error(`認証エラー status=${res.status}`);
+
+        const data = await res.json();
+
+        // role（単体）と roles（配列）の両方を保存（FeatureGate 用）
+        const single = String(data.role || '').toLowerCase();
+        const rolesArr = Array.isArray(data.roles)
+          ? data.roles.map(r => String(r).toLowerCase())
+          : (single ? [single] : []);
+
+        if (single) localStorage.setItem('role', single);
+        localStorage.setItem('roles', JSON.stringify(rolesArr));
+
+        if (!cancelled) {
+          setUser({
+            ...data,
+            role: single || (rolesArr[0] || ''), // 表示用
+            roles: rolesArr,
+          });
+        }
+      } catch (err) {
+        console.error('🚨 認証失敗 @Menu:', err);
         logout();
-        navigate('/login');
-      });
+        if (!cancelled) navigate('/login', { replace: true });
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, [navigate]);
 
   if (!user) {
@@ -51,9 +64,20 @@ export default function Menu() {
         <h2 className="text-3xl sm:text-2xl font-bold text-center mb-12 text-gray-900 dark:text-white break-words">
           ようこそ、<span className="block">{user.name} さん</span>
         </h2>
-        <p className="text-center mb-8 text-xl sm:text-lg text-gray-900 dark:text-gray-200">権限: {user.role}</p>
+
+        <p className="text-center mb-8 text-xl sm:text-lg text-gray-900 dark:text-gray-200">
+          権限: {user.roles?.join(', ') || user.role}
+        </p>
 
         <ul className="space-y-6">
+          <li>
+            <button
+              onClick={() => navigate('/todo')}
+              className="w-full bg-green-500 dark:bg-green-600 text-white py-4 text-2xl sm:text-xl rounded hover:bg-green-600 transition"
+            >
+              📝 Todo
+            </button>
+          </li>
           <li>
             <button
               onClick={() => navigate('/hydro-sense/latest')}
@@ -70,7 +94,7 @@ export default function Menu() {
               ⚙️ AutoMesh
             </button>
           </li>
-          {user.role === 'admin' && (
+          {(user.roles?.includes('admin') || user.role === 'admin') && (
             <li>
               <button
                 onClick={() => navigate('/admin')}
@@ -85,7 +109,7 @@ export default function Menu() {
         <button
           onClick={() => {
             logout();
-            navigate('/login');
+            navigate('/login', { replace: true });
           }}
           className="w-full bg-red-500 dark:bg-red-600 text-white py-4 text-2xl sm:text-xl rounded hover:bg-red-600 transition mt-8"
         >

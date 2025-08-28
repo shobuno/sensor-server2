@@ -1,4 +1,4 @@
-// sensor-server/apps/hydro-sense/frontend/src/index.jsx
+// sensor-server/apps/hydro-sense/frontend/src/main.jsx
 
 import React from "react";
 import ReactDOM from "react-dom/client";
