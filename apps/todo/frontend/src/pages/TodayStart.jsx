@@ -1,23 +1,25 @@
-// sensor-server2/apps/todo/frontend/src/pages/TodayStart.jsx
+// server2/apps/todo/frontend/src/pages/TodayStart.jsx
 import { useEffect, useMemo, useState } from "react";
-import { getDayStart, listItems, patchItem } from "@/lib/apiTodo"; // ← 認証付きAPIだけ使う
+import { fetchJson } from "@/auth"; // ← TodayRunView と同じ経路
 
-/** 並び順: 予定開始/期限 → priority（小さいほど高）→ id */
+/** 並び順: 予定開始/期限 → priority（数値小さいほど高）→ id */
 function byDueAndPriority(a, b) {
   const ad = a.plan_start_at
     ? new Date(a.plan_start_at).getTime()
     : a.due_at
     ? new Date(a.due_at).getTime()
-    : Number.MAX_SAFE_INTEGER;
+    : Number.POSITIVE_INFINITY;
   const bd = b.plan_start_at
     ? new Date(b.plan_start_at).getTime()
     : b.due_at
     ? new Date(b.due_at).getTime()
-    : Number.MAX_SAFE_INTEGER;
+    : Number.POSITIVE_INFINITY;
   if (ad !== bd) return ad - bd;
+
   const ap = typeof a.priority === "number" ? a.priority : 3;
   const bp = typeof b.priority === "number" ? b.priority : 3;
   if (ap !== bp) return ap - bp;
+
   return (a.id || 0) - (b.id || 0);
 }
 
@@ -27,31 +29,20 @@ export default function TodayStart({ onEmptyInbox }) {
   const [items, setItems] = useState([]);
   const [error, setError] = useState(null);
 
-  // 初期ロード：当日日報ID＋候補一覧（認証付きクライアント経由）
+  /** 初回ロード：当日日報IDと対象itemsを取得（※バックエンドは {daily_report_id, items} を返す想定） */
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const head = await getDayStart(); // { daily_report_id, items } を返す
-        setDailyReportId(head?.daily_report_id ?? null);
-
-        // 既に today に入っている一覧（フロント表示のためだけに利用）
-        const todayRes = await listItems({ today: 1, limit: 1000 });
-        const todayIds = new Set(
-          Array.isArray(todayRes) ? todayRes.map(i => i.id) : (todayRes?.items ?? []).map(i => i.id)
-        );
-
-        const base = head?.items ?? [];
-        const merged = base.map(i =>
-          todayIds.has(i.id) ? { ...i, daily_report_id: head?.daily_report_id ?? null } : { ...i, daily_report_id: null }
-        );
+        const { daily_report_id, items } = await fetchJson("/api/todo/day/start");
         if (!mounted) return;
-        setItems(merged);
-        if (merged.length === 0 && onEmptyInbox) onEmptyInbox();
+        setDailyReportId(daily_report_id ?? null);
+        setItems(Array.isArray(items) ? items : []);
+        if ((!items || items.length === 0) && onEmptyInbox) onEmptyInbox();
       } catch (e) {
-        if (mounted) setError("認証エラーまたは読み込み失敗。ログイン状態をご確認ください。");
+        if (mounted) setError("認証に失敗しました。ログイン（トークン/Cookie）を確認してください。");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -60,56 +51,106 @@ export default function TodayStart({ onEmptyInbox }) {
   }, [onEmptyInbox]);
 
   const selectedCount = useMemo(
-    () => items.filter(i => i.daily_report_id === dailyReportId).length,
+    () => items.filter((i) => i.daily_report_id === dailyReportId).length,
     [items, dailyReportId]
   );
 
   const overdueIds = useMemo(() => {
     const now = Date.now();
-    return new Set(items.filter(i => i.due_at && new Date(i.due_at).getTime() < now).map(i => i.id));
+    return new Set(
+      items
+        .filter((i) => i.due_at && new Date(i.due_at).getTime() < now)
+        .map((i) => i.id)
+    );
   }, [items]);
 
-  // 単体PATCH（楽観更新）— 認証付き patchItem を必ず使用
-  async function setDr(itemId, nextDrId) {
+  /** 単体PATCH（楽観更新） */
+  async function patchItemDailyReport(itemId, nextDrId) {
     const prev = items;
-    const next = items.map(it => it.id === itemId ? { ...it, daily_report_id: nextDrId } : it);
+    const next = items.map((it) =>
+      it.id === itemId ? { ...it, daily_report_id: nextDrId } : it
+    );
     setItems(next);
     try {
-      await patchItem(itemId, { daily_report_id: nextDrId });
+      await fetchJson(`/api/todo/items/${itemId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ daily_report_id: nextDrId }),
+        headers: { "Content-Type": "application/json" },
+      });
     } catch {
+      // 失敗したら巻き戻し＋再読込を試みる
       setItems(prev);
-      setError("更新に失敗しました。もう一度お試しください。");
+      try {
+        const { daily_report_id, items } = await fetchJson("/api/todo/day/start");
+        setDailyReportId(daily_report_id ?? null);
+        setItems(Array.isArray(items) ? items : []);
+      } catch {}
+      throw new Error("update-failed");
     }
   }
 
-  // チェックトグル（即時反映）
-  async function toggle(item) {
-    if (dailyReportId == null) return;
-    const checked = item.daily_report_id === dailyReportId;
-    await setDr(item.id, checked ? null : dailyReportId);
+  /** 複数差分をまとめて適用 */
+  async function bulkApply(toEnableIds, toDisableIds) {
+    const tasks = [];
+    toEnableIds.forEach((id) => {
+      const cur = items.find((i) => i.id === id);
+      if (cur && cur.daily_report_id !== dailyReportId) {
+        tasks.push(patchItemDailyReport(id, dailyReportId));
+      }
+    });
+    toDisableIds.forEach((id) => {
+      const cur = items.find((i) => i.id === id);
+      if (cur && cur.daily_report_id != null) {
+        tasks.push(patchItemDailyReport(id, null));
+      }
+    });
+    if (tasks.length === 0) return;
+    try {
+      await Promise.all(tasks);
+    } catch {
+      setError("一部の更新に失敗しました。再度お試しください。");
+    }
   }
 
-  // 自動選択（上位10件ON、他OFF）
+  /** チェックON/OFF（即時PATCH） */
+  async function toggleCheck(item) {
+    if (dailyReportId == null) return;
+    const checked = item.daily_report_id === dailyReportId;
+    try {
+      await patchItemDailyReport(item.id, checked ? null : dailyReportId);
+    } catch {
+      setError("更新に失敗しました。");
+    }
+  }
+
+  /** 自動選択（上位10件ON/他OFF） */
   async function autoPick() {
     if (dailyReportId == null) return;
     const sorted = [...items].sort(byDueAndPriority);
-    const wantOn = new Set(sorted.slice(0, 10).map(i => i.id));
-    const ops = [];
-    for (const it of items) {
-      const isOn = it.daily_report_id === dailyReportId;
-      if (wantOn.has(it.id) && !isOn) ops.push(setDr(it.id, dailyReportId));
-      if (!wantOn.has(it.id) && isOn) ops.push(setDr(it.id, null));
-    }
-    await Promise.all(ops);
+    const wantOn = new Set(sorted.slice(0, 10).map((i) => i.id));
+    const toEnable = [];
+    const toDisable = [];
+    items.forEach((i) => {
+      const isOn = i.daily_report_id === dailyReportId;
+      if (wantOn.has(i.id) && !isOn) toEnable.push(i.id);
+      if (!wantOn.has(i.id) && isOn) toDisable.push(i.id);
+    });
+    await bulkApply(toEnable, toDisable);
   }
 
+  /** 全選択 / 選択解除 */
   async function selectAll() {
     if (dailyReportId == null) return;
-    await Promise.all(items.filter(i => i.daily_report_id !== dailyReportId).map(i => setDr(i.id, dailyReportId)));
+    const toEnable = items
+      .filter((i) => i.daily_report_id !== dailyReportId)
+      .map((i) => i.id);
+    await bulkApply(toEnable, []);
   }
-
   async function clearAll() {
-    await Promise.all(items.filter(i => i.daily_report_id != null).map(i => setDr(i.id, null)));
+    const toDisable = items
+      .filter((i) => i.daily_report_id != null)
+      .map((i) => i.id);
+    await bulkApply([], toDisable);
   }
 
   if (loading) return <div className="p-4">読み込み中…</div>;
@@ -125,29 +166,46 @@ export default function TodayStart({ onEmptyInbox }) {
     <div className="p-4 space-y-3">
       <h2 className="text-lg font-bold">今日の開始</h2>
 
-      {error && <div className="bg-red-100 text-red-700 p-2 rounded">{error}</div>}
+      {error && (
+        <div className="bg-red-100 text-red-700 p-2 rounded">{error}</div>
+      )}
 
       <div className="flex gap-2">
-        <button className="px-3 py-1 rounded border" onClick={autoPick}>自動選択</button>
-        <button className="px-3 py-1 rounded border" onClick={selectAll}>全選択</button>
-        <button className="px-3 py-1 rounded border" onClick={clearAll}>選択解除</button>
-        <div className="ml-auto text-sm text-gray-500 self-center">選択 {selectedCount} 件</div>
+        <button className="px-3 py-1 rounded border" onClick={autoPick}>
+          自動選択
+        </button>
+        <button className="px-3 py-1 rounded border" onClick={selectAll}>
+          全選択
+        </button>
+        <button className="px-3 py-1 rounded border" onClick={clearAll}>
+          選択解除
+        </button>
+        <div className="ml-auto text-sm text-gray-500 self-center">
+          選択 {selectedCount} 件
+        </div>
       </div>
 
       <ul className="divide-y border rounded">
-        {items.map(i => {
+        {items.map((i) => {
           const checked = i.daily_report_id === dailyReportId;
           const overdue = overdueIds.has(i.id);
           return (
             <li key={i.id} className="p-3 flex items-center gap-3">
-              <input type="checkbox" checked={checked} onChange={() => toggle(i)} />
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggleCheck(i)}
+              />
               <div className="flex-1">
                 <div className="font-medium">
                   {i.title}
-                  {overdue && <span className="ml-2 text-xs text-red-600">期限超過</span>}
+                  {overdue && (
+                    <span className="ml-2 text-xs text-red-600">期限超過</span>
+                  )}
                 </div>
                 <div className="text-xs text-gray-500">
-                  期日: {i.due_at ? new Date(i.due_at).toLocaleString() : "—"}／優先度: {String(i.priority ?? "—")}
+                  期日: {i.due_at ? new Date(i.due_at).toLocaleString() : "—"}／
+                  優先度: {String(i.priority ?? "—")}
                 </div>
               </div>
               <div className="text-xs text-gray-600">{i.status}</div>
@@ -155,7 +213,7 @@ export default function TodayStart({ onEmptyInbox }) {
           );
         })}
       </ul>
-      {/* 「確定」ボタンは無し（リアルタイム反映） */}
+      {/* 確定ボタンは撤去（リアルタイム反映） */}
     </div>
   );
 }
