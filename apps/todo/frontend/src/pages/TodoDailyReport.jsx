@@ -1,76 +1,114 @@
-// sensor-server/apps/todo/frontend/src/pages/TodoDailyReport.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchJson } from "@/auth";
 
+/* ========= util ========= */
+const pad2 = (n) => String(n).padStart(2, "0");
 function toISODateInput(d) {
-  const y = d.getFullYear(),
-    m = String(d.getMonth() + 1).padStart(2, "0"),
-    day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
-
 function fromISODateInput(s) {
   const [y, m, d] = s.split("-").map(Number);
   const dt = new Date(y, (m || 1) - 1, d || 1);
   dt.setHours(0, 0, 0, 0);
   return dt;
 }
+function titleFromDateStr(iso) {
+  if (!iso) return "日報";
+  const d = fromISODateInput(iso);
+  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}の日報`;
+}
 
+/* ========= timeline (PC用) ========= */
+function SessionsTimeline({ sessions, plan_start_at, plan_end_at, winStart, winEnd }) {
+  const toPct = (dt) => {
+    const t = (dt instanceof Date) ? dt : new Date(dt);
+    const a = winStart.getTime(), b = winEnd.getTime();
+    const x = Math.max(a, Math.min(b, t.getTime()));
+    return ((x - a) / (b - a)) * 100;
+  };
+  const widthPct = (s, e) => Math.max(0, toPct(e) - toPct(s));
+  const gridBg =
+    "repeating-linear-gradient(90deg, transparent, transparent calc(100%/12 - 1px), rgba(0,0,0,0.06) calc(100%/12))";
+
+  const hourLabels = useMemo(() => {
+    const labels = [];
+    const spanMs = winEnd - winStart;
+    const startH = new Date(winStart); startH.setMinutes(0,0,0);
+    for (let t = startH.getTime(); t <= winEnd.getTime()+1; t += 2*60*60*1000) {
+      const p = ((t - winStart.getTime()) / spanMs) * 100;
+      if (p <= 2 || p >= 98) continue; // 端は別で描く
+      const h = new Date(t).getHours();
+      labels.push({ p: Math.max(0, Math.min(100, p)), text: `${h}時` });
+    }
+    return labels;
+  }, [winStart, winEnd]);
+
+  return (
+    <div className="w-full">
+      <div className="relative h-10 border rounded" style={{ background: gridBg }}>
+        {/* plan (top) */}
+        <div className="absolute inset-x-0 top-0 h-[46%]">
+          {plan_start_at && plan_end_at && (() => {
+            const left  = `${toPct(plan_start_at)}%`;
+            const width = `${widthPct(plan_start_at, plan_end_at)}%`;
+            return (
+              <div className="absolute top-[2px] bottom-[2px] rounded-sm"
+                   style={{ left, width, background: "rgba(59,130,246,0.28)" }} />
+            );
+          })()}
+        </div>
+        {/* small gap */}
+        <div className="absolute inset-x-0 top-[46%] h-[6%]" />
+        {/* sessions (bottom) */}
+        <div className="absolute inset-x-0 bottom-0 h-[46%]">
+          {(sessions || []).map((s, i) => {
+            const start = s.start_at;
+            const end   = s.end_at || new Date();
+            const left  = `${toPct(start)}%`;
+            const width = `${Math.max(widthPct(start, end), 0.5)}%`;
+            return (
+              <div key={i}
+                   className="absolute top-[2px] bottom-[2px] rounded-sm"
+                   style={{ left, width, background: "rgba(16,185,129,0.96)" }} />
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-[2px] h-4 text-[10px] text-gray-600 relative select-none">
+        <div className="absolute left-0">{`${winStart.getHours()}時`}</div>
+        <div className="absolute right-0">{`${winEnd.getHours()}時`}</div>
+        {hourLabels.map((lb, i) => (
+          <div key={i} className="absolute -translate-x-1/2" style={{ left: `${lb.p}%` }}>
+            {lb.text}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ========= main ========= */
 export default function TodoDailyReport() {
   const [sp] = useSearchParams();
 
-  // ====== 一覧（期間） ======
-  const today = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
+  // 既定で当日を開く
+  const todayIso = useMemo(() => {
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    return toISODateInput(d);
   }, []);
-  const lastWeek = useMemo(() => new Date(Date.now() - 6 * 24 * 3600 * 1000), []);
+  const [editDate, setEditDate] = useState(() => sp.get("date") || todayIso);
 
-  const [from, setFrom] = useState(toISODateInput(lastWeek));
-  const [to, setTo] = useState(toISODateInput(today));
-  const [rows, setRows] = useState([]);
-  const [loadingList, setLoadingList] = useState(false);
-
-  // ====== 編集（特定日 or 期間プレビュー） ======
-  const [editDate, setEditDate] = useState(() => sp.get("date") || null); // "YYYY-MM-DD" | null
   const [header, setHeader] = useState(null);
   const [items, setItems] = useState([]);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [closing, setClosing] = useState(false);
 
-  // ==== 一覧取得（保存済みのスナップショット一覧）====
-  const fetchList = async () => {
-    setLoadingList(true);
-    try {
-      const q = new URLSearchParams();
-      if (from) q.set("from", from);
-      if (to) q.set("to", to);
-      const data = await fetchJson(`/api/todo/reports/range?${q.toString()}`);
-      setRows(Array.isArray(data) ? data : []);
-    } catch (e) {
-      alert(`日報一覧の取得に失敗: ${e.message}`);
-    } finally {
-      setLoadingList(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchList();
-    // 初回 ?date= があればその日を開く
-    const d = sp.get("date");
-    if (d) openEditor(d);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ==== 個別読み込み（保存済みが無ければプレビュー集計を返す）====
   const loadDay = async (dayStr) => {
     if (!dayStr) return;
     setLoadingEdit(true);
     try {
-      const data = await fetchJson(`/api/todo/reports?date=${dayStr}`);
+      const data = await fetchJson(`/api/todo/reports?date=${dayStr}&with_sessions=1`);
       setHeader(data.header);
       setItems(data.items || []);
     } catch (e) {
@@ -79,38 +117,12 @@ export default function TodoDailyReport() {
       setLoadingEdit(false);
     }
   };
+  useEffect(() => { loadDay(editDate); /* eslint-disable-next-line */ }, []);
 
-  // ==== 締め前プレビュー（最後の終了〜今）====
-  const loadLive = async () => {
-    setLoadingEdit(true);
-    try {
-      const data = await fetchJson(`/api/todo/reports/live`);
-      setHeader(data.header);
-      setItems(data.items || []);
-      setEditDate(null); // 期間表示なので日付はクリア
-    } catch (e) {
-      alert(`プレビュー取得失敗: ${e.message}`);
-    } finally {
-      setLoadingEdit(false);
-    }
-  };
-
-  // ==== 編集開始（一覧行クリック or 日付指定）====
-  const openEditor = (dayStr) => {
-    setEditDate(dayStr);
-    loadDay(dayStr);
-  };
-
-  // ==== フィールド編集 ====
-  const setHeaderField = (key, val) => setHeader((h) => ({ ...(h || {}), [key]: val }));
+  const openEditor = (d) => { setEditDate(d); loadDay(d); };
   const setItemField = (idx, key, val) =>
-    setItems((list) => {
-      const copy = [...list];
-      copy[idx] = { ...copy[idx], [key]: val };
-      return copy;
-    });
+    setItems((list) => { const copy = [...list]; copy[idx] = { ...copy[idx], [key]: val }; return copy; });
 
-  // ==== 日付ベース保存 ====
   const save = async () => {
     if (!editDate) return;
     setSaving(true);
@@ -119,336 +131,230 @@ export default function TodoDailyReport() {
         method: "POST",
         body: JSON.stringify({
           date: editDate,
-          title: header?.title || "日報",
+          title: titleFromDateStr(editDate),
           memo: header?.memo || "",
-          items: items.map((it, i) => ({
-            ...it,
-            sort_order: i + 1,
-          })),
+          items: items.map((it, i) => ({ ...it, sort_order: i + 1 })),
         }),
       });
       await loadDay(editDate);
-      await fetchList();
       alert("保存しました");
     } catch (e) {
       alert(`保存に失敗: ${e.message}`);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
-  // ==== 「今日はここまで」：期間を確定保存 ====
-  const closeAndSave = async () => {
-    if (!confirm("この期間を日報として確定保存し、「今日の終了」を記録します。よろしいですか？")) return;
-    setClosing(true);
-    try {
-      await fetchJson(`/api/todo/reports/close`, {
-        method: "POST",
-        body: JSON.stringify({ memo: header?.memo || "" }),
-      });
-      alert("保存しました");
-      await fetchList();
-      // 一番新しい保存済みを開く
-      const newest = await fetchJson(`/api/todo/reports/range?from=&to=`);
-      const lastDate = Array.isArray(newest) && newest[0]?.report_date;
-      if (lastDate) openEditor(lastDate);
-    } catch (e) {
-      alert(`締め保存に失敗: ${e.message}`);
-    } finally {
-      setClosing(false);
-    }
-  };
-
-  // ==== 前日/翌日移動 ====
   const moveDay = (delta) => {
-    if (!editDate) return;
     const d = fromISODateInput(editDate);
     d.setDate(d.getDate() + delta);
-    const next = toISODateInput(d);
-    setEditDate(next);
-    loadDay(next);
+    openEditor(toISODateInput(d));
   };
+  const openToday = () => openEditor(todayIso);
 
-  // ==== レンダリング ====
-  return (
-    <div className="p-4 space-y-6">
-      <h1 className="text-xl font-semibold">日報</h1>
+  // PCのタイムライン表示ウィンドウ（±1h / 既存仕様）
+  const timelineWindow = useMemo(() => {
+    const padMin = 60;
+    const toDate = (v) => (v ? new Date(v) : null);
+    let start = toDate(header?.period_start_at);
+    let end   = toDate(header?.period_end_at) || (editDate ? new Date(`${editDate}T19:00:00`) : null);
+    if (start && !end) end = new Date();
+    if (!start || !end) {
+      const base = editDate ? new Date(`${editDate}T00:00:00`) : new Date();
+      const s = new Date(base); s.setHours(8,0,0,0);
+      const e = new Date(base); e.setHours(19,0,0,0);
+      return { winStart: s, winEnd: e };
+    }
+    return {
+      winStart: new Date(start.getTime() - padMin * 60000),
+      winEnd:   new Date(end.getTime()   + padMin * 60000),
+    };
+  }, [header?.period_start_at, header?.period_end_at, editDate]);
 
-      {/* 一覧（期間検索） */}
-      <section className="space-y-2">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col">
-            <label className="text-xs text-gray-500">From</label>
-            <input
-              type="date"
-              className="border rounded px-2 py-1"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col">
-            <label className="text-xs text-gray-500">To</label>
-            <input
-              type="date"
-              className="border rounded px-2 py-1"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            />
-          </div>
-          <button onClick={fetchList} className="px-3 py-1 rounded bg-black text-white">
-            更新
-          </button>
-          <div className="ml-auto text-sm opacity-70">
-            {loadingList ? "読み込み中…" : `${rows.length} 件`}
-          </div>
+  /* ===== ここからUI ===== */
+
+  // 共通ヘッダ(タイトル＋メモ)
+  const HeaderCommon = (
+    <>
+      <h1 className="text-xl md:text-2xl font-semibold">{titleFromDateStr(editDate)}</h1>
+      <textarea
+        rows={3}
+        placeholder="自由記述メモ（任意）"
+        className="border px-2 py-1 rounded w-full"
+        value={header?.memo || ""}
+        onChange={(e) => setHeader((h) => ({ ...(h || {}), memo: e.target.value }))}
+      />
+      {header?.summary && (
+        <div className="text-[13px] md:text-sm opacity-80">
+          合計実績: {header.summary.total_spent_min ?? 0} 分　
+          完了: {header.summary.completed ?? 0}　
+          停止: {header.summary.paused ?? 0}　
+          件数: {header.summary.total ?? 0}
         </div>
+      )}
+    </>
+  );
 
-        <div className="flex items-center gap-2">
-          <button className="px-3 py-1 rounded border" onClick={loadLive}>
-            締め前のプレビュー（最後の終了〜今）
-          </button>
-          <button
-            className="px-3 py-1 rounded bg-rose-600 text-white disabled:opacity-50"
-            disabled={closing}
-            onClick={closeAndSave}
-          >
-            {closing ? "保存中…" : "今日はここまで（締めて保存）"}
-          </button>
-        </div>
+  // 日付ナビ（PC/スマホ両方に出す）
+  const DateNav = (
+    <div className="flex flex-wrap items-center gap-2 justify-between">
+      <div className="flex items-center gap-2">
+        <button className="px-3 py-1.5 rounded bg-black text-white" onClick={openToday}>
+          今日を開く
+        </button>
+        <button className="px-3 py-1 rounded border" onClick={() => moveDay(-1)}>← 前日</button>
+        <input
+          type="date"
+          value={editDate}
+          onChange={(e) => openEditor(e.target.value)}
+          className="border px-2 py-1 rounded"
+        />
+        <button className="px-3 py-1 rounded border" onClick={() => moveDay(1)}>翌日 →</button>
+      </div>
+      <div className="text-sm opacity-70">
+        {loadingEdit ? "読み込み中…" : header?.id ? "保存済み" : "未保存（プレビュー）"}
+      </div>
+    </div>
+  );
 
-        <div className="overflow-auto border rounded">
-          <table className="min-w-[480px] w-full text-sm border-collapse">
-            <thead className="bg-gray-50">
-              <tr className="border-b">
-                <th className="text-left py-2 px-2">日付</th>
-                <th className="text-left py-2 px-2">タイトル</th>
-                <th className="text-right py-2 px-2">合計実績(分)</th>
-                <th className="text-right py-2 px-2">完了</th>
-                <th className="text-right py-2 px-2">停止</th>
-                <th className="text-right py-2 px-2">件数</th>
-                <th className="py-2 px-2 w-28">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const dateStr = r.report_date?.slice(0, 10); // "YYYY-MM-DD"
-                const sum = r.summary || {};
-                return (
-                  <tr key={r.id} className="border-b hover:bg-gray-50">
-                    <td className="py-2 px-2">{dateStr}</td>
-                    <td className="py-2 px-2">{r.title || "日報"}</td>
-                    <td className="py-2 px-2 text-right">{sum.total_spent_min ?? 0}</td>
-                    <td className="py-2 px-2 text-right">{sum.completed ?? 0}</td>
-                    <td className="py-2 px-2 text-right">{sum.paused ?? 0}</td>
-                    <td className="py-2 px-2 text-right">{sum.total ?? 0}</td>
-                    <td className="py-2 px-2">
-                      <button
-                        onClick={() => openEditor(dateStr)}
-                        className="px-2 py-1 rounded border"
-                      >
-                        開く
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!loadingList && rows.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="p-4 text-center text-gray-500">
-                    データなし
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+  /* ------ PC: 従来のテーブル＋タイムライン（md以上で表示） ------ */
+  const DesktopTable = (
+    <div className="hidden md:block space-y-4">
+      {DateNav}
+      {HeaderCommon}
 
-        {/* 任意の日付を直接編集に開くショートカット */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">日付を直接編集：</span>
-          <input
-            type="date"
-            className="border rounded px-2 py-1"
-            value={editDate || ""}
-            onChange={(e) => openEditor(e.target.value)}
-          />
-          <button
-            className="px-2 py-1 rounded border"
-            onClick={() => openEditor(toISODateInput(today))}
-          >
-            今日を開く
-          </button>
-        </div>
-      </section>
+      {/* 列ラベル（スクロール外に固定） */}
+      <div className="grid grid-cols-[2rem_28ch_12ch_1fr] gap-x-1 text-xs text-gray-500 px-1">
+        <div>#</div>
+        <div>タイトル / 残</div>
+        <div>予定 / 実績(分)</div>
+        <div>時間帯</div>
+      </div>
 
-      {/* エディタ（特定日 or 期間プレビュー） */}
-      {(editDate || header?.period_start_at) && (
-        <section className="space-y-3">
-          <div className="flex items-center gap-2">
-            {editDate ? (
-              <>
-                <button className="px-3 py-1 rounded bg-gray-200" onClick={() => moveDay(-1)}>
-                  ← 前日
-                </button>
-                <input
-                  type="date"
-                  value={editDate}
-                  onChange={(e) => openEditor(e.target.value)}
-                  className="border px-2 py-1 rounded"
-                />
-                <button className="px-3 py-1 rounded bg-gray-200" onClick={() => moveDay(1)}>
-                  翌日 →
-                </button>
-              </>
-            ) : (
-              <div className="text-sm px-2 py-1 rounded bg-indigo-50 border">
-                表示中の期間：
-                {header?.period_start_at
-                  ? new Date(header.period_start_at).toLocaleString()
-                  : "-"}
-                {" 〜 "}
-                {header?.period_end_at ? new Date(header.period_end_at).toLocaleString() : "-"}
-                （プレビュー）
-              </div>
-            )}
-            <div className="ml-auto text-sm opacity-70">
-              {loadingEdit ? "読み込み中…" : header?.id ? "保存済み" : "未保存（プレビュー）"}
-            </div>
-          </div>
-
-          <div className="grid gap-2">
-            <input
-              className="border px-2 py-1 rounded text-lg"
-              value={header?.title || "日報"}
-              onChange={(e) => setHeaderField("title", e.target.value)}
-            />
-            <textarea
-              rows={4}
-              placeholder="自由記述メモ（任意）"
-              className="border px-2 py-1 rounded"
-              value={header?.memo || ""}
-              onChange={(e) => setHeaderField("memo", e.target.value)}
-            />
-          </div>
-
-          {header?.summary && (
-            <div className="text-sm opacity-80">
-              合計実績: {header.summary.total_spent_min ?? 0} 分　
-              完了: {header.summary.completed ?? 0}　
-              停止: {header.summary.paused ?? 0}　
-              件数: {header.summary.total ?? 0}
-            </div>
-          )}
-
-          <div className="overflow-auto border rounded">
-            <table className="min-w-[900px] w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="p-2 text-left w-10">#</th>
-                  <th className="p-2 text-left">タイトル</th>
-                  <th className="p-2">状態</th>
-                  <th className="p-2">予定(分)</th>
-                  <th className="p-2">実績(分)</th>
-                  <th className="p-2">残</th>
-                  <th className="p-2">単位</th>
-                  <th className="p-2">タグ</th>
-                  <th className="p-2 w-[28ch]">メモ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it, idx) => (
-                  <tr key={idx} className="border-t">
-                    <td className="p-2">{idx + 1}</td>
-                    <td className="p-2">{it.title}</td>
-                    <td className="p-2 text-center">{it.status}</td>
-                    <td className="p-2 text-center">
+      <div className="overflow-auto border rounded">
+        <table className="min-w-[880px] w-full text-sm border-collapse table-fixed">
+          <colgroup>
+            <col style={{ width: "2.0rem" }} />
+            <col style={{ width: "26ch"  }} />
+            <col style={{ width: "9.5ch" }} />
+            <col />
+          </colgroup>
+          <tbody>
+            {items.map((it, idx) => (
+              <tr key={idx} className="border-t align-top">
+                <td className="pl-2 pr-0 py-0.5 text-xs">{idx + 1}</td>
+                <td className="p-0.5">
+                  <div className="text-sm leading-tight truncate">{it.title}</div>
+                  <div className="mt-1 flex items-center gap-1 text-xs text-gray-600">
+                    <span>残</span>
+                    <input
+                      type="number"
+                      className="h-6 w-12 border rounded px-1 py-0.5 text-right"
+                      value={it.remaining_amount ?? ""}
+                      onChange={(e) =>
+                        setItemField(idx, "remaining_amount",
+                          e.target.value === "" ? null : Number(e.target.value))}
+                    />
+                    <input
+                      type="text"
+                      className="h-6 w-10 border rounded px-1 py-0.5"
+                      value={it.remaining_unit ?? ""}
+                      onChange={(e) => setItemField(idx, "remaining_unit", e.target.value || null)}
+                      placeholder="単位"
+                    />
+                  </div>
+                </td>
+                <td className="p-0 pr-[2px]">
+                  <div className="flex flex-col gap-[2px] text-xs">
+                    <div className="flex items-center gap-1">
+                      <span className="opacity-70">予</span>
                       <input
                         type="number"
-                        className="w-20 border rounded px-1 py-0.5 text-right"
+                        className="h-6 w-10 border rounded px-1 py-0.5 text-right"
                         value={it.planned_minutes ?? ""}
                         onChange={(e) =>
-                          setItemField(
-                            idx,
-                            "planned_minutes",
-                            e.target.value ? Number(e.target.value) : null
-                          )
-                        }
+                          setItemField(idx, "planned_minutes",
+                            e.target.value ? Number(e.target.value) : null)}
                       />
-                    </td>
-                    <td className="p-2 text-center">
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="opacity-70">実</span>
                       <input
                         type="number"
-                        className="w-20 border rounded px-1 py-0.5 text-right"
+                        className="h-6 w-10 border rounded px-1 py-0.5 text-right"
                         value={it.spent_minutes ?? ""}
                         onChange={(e) =>
-                          setItemField(
-                            idx,
-                            "spent_minutes",
-                            e.target.value ? Number(e.target.value) : null
-                          )
-                        }
+                          setItemField(idx, "spent_minutes",
+                            e.target.value ? Number(e.target.value) : null)}
                       />
-                    </td>
-                    <td className="p-2 text-center">
-                      <input
-                        type="number"
-                        className="w-20 border rounded px-1 py-0.5 text-right"
-                        value={it.remaining_amount ?? ""}
-                        onChange={(e) =>
-                          setItemField(
-                            idx,
-                            "remaining_amount",
-                            e.target.value === "" ? null : Number(e.target.value)
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="p-2 text-center">
-                      <input
-                        type="text"
-                        className="w-20 border rounded px-1 py-0.5"
-                        value={it.remaining_unit ?? ""}
-                        onChange={(e) => setItemField(idx, "remaining_unit", e.target.value || null)}
-                      />
-                    </td>
-                    <td className="p-2">{(it.tags || []).join(", ")}</td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        className="w-full border rounded px-1 py-0.5"
-                        value={it.note ?? ""}
-                        onChange={(e) => setItemField(idx, "note", e.target.value)}
-                      />
-                    </td>
-                  </tr>
-                ))}
-                {items.length === 0 && !loadingEdit && (
-                  <tr>
-                    <td colSpan={9} className="p-4 text-center opacity-60">
-                      対象がありません
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </div>
+                </td>
+                <td className="p-0 pr-[2px]">
+                  <SessionsTimeline
+                    sessions={it.sessions}
+                    plan_start_at={it.plan_start_at}
+                    plan_end_at={it.plan_end_at}
+                    winStart={timelineWindow.winStart}
+                    winEnd={timelineWindow.winEnd}
+                  />
+                </td>
+              </tr>
+            ))}
+            {items.length === 0 && !loadingEdit && (
+              <tr><td colSpan={4} className="p-3 text-center opacity-60">対象がありません</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-          <div className="flex gap-2">
-            {editDate ? (
-              <button
-                disabled={saving}
-                onClick={save}
-                className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
-              >
-                {saving ? "保存中…" : "保存"}
-              </button>
-            ) : null}
-            <button className="px-3 py-2 rounded border" onClick={() => setEditDate(null)}>
-              閉じる
-            </button>
+      <div className="flex gap-2">
+        <button disabled={saving} onClick={save}
+          className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50">
+          {saving ? "保存中…" : "保存"}
+        </button>
+      </div>
+    </div>
+  );
+
+  /* ------ スマホ: グラフ省略のカード表示（md未満で表示） ------ */
+  const MobileCards = (
+    <div className="md:hidden space-y-4">
+      {DateNav}
+      {HeaderCommon}
+
+      <div className="space-y-3">
+        {items.map((it, idx) => (
+          <div key={idx} className="border rounded-lg p-3">
+            <div className="text-lg font-semibold mb-1">
+              {idx + 1}. {it.title}
+            </div>
+            <div className="text-[15px] text-gray-700 space-y-1">
+              <div>残: <span className="font-medium">{it.remaining_amount ?? 0}</span> <span className="opacity-70">{it.remaining_unit ?? "分"}</span></div>
+              <div className="flex gap-6">
+                <div>予: <span className="font-medium">{it.planned_minutes ?? "-"}</span></div>
+                <div>実: <span className="font-medium">{it.spent_minutes ?? 0}</span></div>
+              </div>
+            </div>
           </div>
-        </section>
-      )}
+        ))}
+        {items.length === 0 && !loadingEdit && (
+          <div className="text-center text-sm opacity-60">対象がありません</div>
+        )}
+      </div>
+
+      <div className="flex gap-2">
+        <button disabled={saving} onClick={save}
+          className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50 text-base">
+          {saving ? "保存中…" : "保存"}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* スマホ/PCで出し分け */}
+      {DesktopTable}
+      {MobileCards}
     </div>
   );
 }

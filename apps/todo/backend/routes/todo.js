@@ -122,7 +122,7 @@ router.post('/items', async (req, res) => {
     title, description, priority,
     due_at, due_date, due_time,
     category, unit, target_amount, remaining_amount, pin_today,
-    plan_start_at, plan_end_at,
+    plan_start_at, plan_end_at, daily_report_id,
   } = req.body || {};
   if (!title) return res.status(400).json({ error: 'title は必須です' });
 
@@ -132,8 +132,9 @@ router.post('/items', async (req, res) => {
   const q = `
     INSERT INTO todo.items
       (user_id, title, description, status, today_flag, priority, due_at, category, unit,
-       target_amount, remaining_amount, tags_text, plan_start_at, plan_end_at)
-    VALUES ($1,$2,$3,'INBOX'::todo.item_status,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       target_amount, remaining_amount, tags_text, plan_start_at, plan_end_at, daily_report_id)
+    VALUES ($1,$2,$3,'INBOX'::todo.item_status,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+
     RETURNING *`;
   const vals = [
     userId, title, description ?? null,
@@ -141,6 +142,7 @@ router.post('/items', async (req, res) => {
     computedDueAt ?? null, category ?? null, unit ?? null,
     target_amount ?? null, remaining_amount ?? null,
     tagsCsv, plan_start_at ?? null, plan_end_at ?? null,
+    (Number.isInteger(daily_report_id) ? daily_report_id : null),
   ];
   const { rows } = await db.query(q, vals);
   const row = rows[0];
@@ -501,6 +503,47 @@ router.get('/reports/daily', async (req, res) => {
   const { rows } = await db.query(q, params);
   res.json(rows);
 });
+
+/** ======================= Daily Reports ======================= **/
+
+/**
+ * GET /daily-reports/today
+ * - JSTの「今日」の daily_reports を返す（無ければ作って返す）
+ * - 戻り値: { id, user_id, report_date, period_start_at, ... }
+ */
+router.get('/daily-reports/today', async (req, res) => {
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'no user id in token' });
+
+  try {
+    const { rows } = await db.query(
+      `
+      WITH jst AS (
+        SELECT (now() AT TIME ZONE 'Asia/Tokyo')::date AS d
+      ),
+      upsert AS (
+        INSERT INTO todo.daily_reports (user_id, report_date, period_start_at, created_at, updated_at)
+        SELECT $1, jst.d, now(), now(), now() FROM jst
+        ON CONFLICT (user_id, report_date) DO NOTHING
+        RETURNING *
+      )
+      SELECT * FROM upsert
+      UNION ALL
+      SELECT dr.* FROM todo.daily_reports dr, jst
+       WHERE dr.user_id = $1 AND dr.report_date = jst.d
+      LIMIT 1
+      `,
+      [userId]
+    );
+    if (!rows[0]) return res.status(500).json({ error: 'cannot upsert daily_report' });
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('GET /todo/daily-reports/today error:', e);
+    res.status(500).json({ error: 'internal-error' });
+  }
+});
+
+
 
 // 既存詳細系ルーター（必要なら）
 router.use(require('./reports'));

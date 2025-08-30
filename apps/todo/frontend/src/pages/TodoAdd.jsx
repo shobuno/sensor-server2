@@ -100,6 +100,17 @@ export default function TodoAdd({ editId, onCreated }) {
     return () => { alive = false; resetForm(); };
   }, [isEdit, editId, location.key, nav]);
 
+  // ===== 当日レポートIDの取得（なければ生成） =====
+  async function getOrCreateTodayReportId() {
+    try {
+      const rep = await fetchJson("/api/todo/daily-reports/today");
+      return rep?.id ?? null;
+    } catch {
+      // 万一失敗しても today_flag だけで継続
+      return null;
+    }
+  }
+
   // ===== 送信 =====
   const onSubmit = async () => {
     const baseTitle = (form.title || "").trim();
@@ -160,6 +171,13 @@ export default function TodoAdd({ editId, onCreated }) {
           pin_today: !!form.pin_today,
           repeat: form.repeat,
         };
+
+        // ★ ここが今回の追加。pin_today のときは daily_report_id を付与
+        if (form.pin_today) {
+          const reportId = await getOrCreateTodayReportId();
+          if (reportId) body.daily_report_id = reportId;
+        }
+
         await fetchJson("/api/todo/items", {
           method: "POST",
           body: JSON.stringify(body),

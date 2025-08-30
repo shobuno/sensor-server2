@@ -1,26 +1,26 @@
 // server2/apps/todo/frontend/src/pages/TodayStart.jsx
 import { useEffect, useMemo, useState } from "react";
-import { fetchJson } from "@/auth"; // ← TodayRunView と同じ経路
+import { fetchJson } from "@/auth"; // ← TodayRunView と同じ認証付きフェッチ
 
 /** 並び順: 予定開始/期限 → priority（数値小さいほど高）→ id */
 function byDueAndPriority(a, b) {
-  const ad = a.plan_start_at
+  const ad = a?.plan_start_at
     ? new Date(a.plan_start_at).getTime()
-    : a.due_at
+    : a?.due_at
     ? new Date(a.due_at).getTime()
     : Number.POSITIVE_INFINITY;
-  const bd = b.plan_start_at
+  const bd = b?.plan_start_at
     ? new Date(b.plan_start_at).getTime()
-    : b.due_at
+    : b?.due_at
     ? new Date(b.due_at).getTime()
     : Number.POSITIVE_INFINITY;
   if (ad !== bd) return ad - bd;
 
-  const ap = typeof a.priority === "number" ? a.priority : 3;
-  const bp = typeof b.priority === "number" ? b.priority : 3;
+  const ap = typeof a?.priority === "number" ? a.priority : 3;
+  const bp = typeof b?.priority === "number" ? b.priority : 3;
   if (ap !== bp) return ap - bp;
 
-  return (a.id || 0) - (b.id || 0);
+  return (a?.id || 0) - (b?.id || 0);
 }
 
 export default function TodayStart({ onEmptyInbox }) {
@@ -29,25 +29,37 @@ export default function TodayStart({ onEmptyInbox }) {
   const [items, setItems] = useState([]);
   const [error, setError] = useState(null);
 
-  /** 初回ロード：当日日報IDと対象itemsを取得（※バックエンドは {daily_report_id, items} を返す想定） */
+  /** 初期ロード：当日日報IDと対象itemsを取得（{ daily_report_id, items } 形式） */
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const { daily_report_id, items } = await fetchJson("/api/todo/day/start");
+        const payload = await fetchJson("/api/todo/day/start");
+        const drId = payload?.daily_report_id ?? null;
+        const rows = Array.isArray(payload?.items) ? payload.items : [];
+
         if (!mounted) return;
-        setDailyReportId(daily_report_id ?? null);
-        setItems(Array.isArray(items) ? items : []);
-        if ((!items || items.length === 0) && onEmptyInbox) onEmptyInbox();
-      } catch (e) {
-        if (mounted) setError("認証に失敗しました。ログイン（トークン/Cookie）を確認してください。");
+        setDailyReportId(drId);
+        // 表示の一貫性：当日日報に紐づいているものは today_flag も true に寄せる
+        setItems(
+          rows.map((it) => ({
+            ...it,
+            today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
+          }))
+        );
+
+        if (rows.length === 0 && onEmptyInbox) onEmptyInbox();
+      } catch (_e) {
+        if (mounted) setError("認証エラーまたは読み込みに失敗しました。ログイン状態をご確認ください。");
       } finally {
         if (mounted) setLoading(false);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [onEmptyInbox]);
 
   const selectedCount = useMemo(
@@ -58,32 +70,46 @@ export default function TodayStart({ onEmptyInbox }) {
   const overdueIds = useMemo(() => {
     const now = Date.now();
     return new Set(
-      items
-        .filter((i) => i.due_at && new Date(i.due_at).getTime() < now)
-        .map((i) => i.id)
+      items.filter((i) => i.due_at && new Date(i.due_at).getTime() < now).map((i) => i.id)
     );
   }, [items]);
 
-  /** 単体PATCH（楽観更新） */
+  /** 単体PATCH（楽観更新）— daily_report_id と today_flag を同時に更新 */
   async function patchItemDailyReport(itemId, nextDrId) {
+    const nextToday = !!nextDrId; // チェックON→true, OFF→false
+
+    // 楽観更新
     const prev = items;
     const next = items.map((it) =>
-      it.id === itemId ? { ...it, daily_report_id: nextDrId } : it
+      it.id === itemId
+        ? { ...it, daily_report_id: nextDrId, today_flag: nextToday }
+        : it
     );
     setItems(next);
+
     try {
       await fetchJson(`/api/todo/items/${itemId}`, {
         method: "PATCH",
-        body: JSON.stringify({ daily_report_id: nextDrId }),
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          daily_report_id: nextDrId,
+          today_flag: nextToday, // ★ 連動ポイント
+        }),
       });
     } catch {
-      // 失敗したら巻き戻し＋再読込を試みる
+      // 失敗したら巻き戻し & 再取得で整合を戻す
       setItems(prev);
       try {
-        const { daily_report_id, items } = await fetchJson("/api/todo/day/start");
-        setDailyReportId(daily_report_id ?? null);
-        setItems(Array.isArray(items) ? items : []);
+        const payload = await fetchJson("/api/todo/day/start");
+        const drId = payload?.daily_report_id ?? null;
+        const rows = Array.isArray(payload?.items) ? payload.items : [];
+        setDailyReportId(drId);
+        setItems(
+          rows.map((it) => ({
+            ...it,
+            today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
+          }))
+        );
       } catch {}
       throw new Error("update-failed");
     }
@@ -100,7 +126,7 @@ export default function TodayStart({ onEmptyInbox }) {
     });
     toDisableIds.forEach((id) => {
       const cur = items.find((i) => i.id === id);
-      if (cur && cur.daily_report_id != null) {
+      if (cur && cur.daily_report_id === dailyReportId) {
         tasks.push(patchItemDailyReport(id, null));
       }
     });
@@ -108,7 +134,7 @@ export default function TodayStart({ onEmptyInbox }) {
     try {
       await Promise.all(tasks);
     } catch {
-      setError("一部の更新に失敗しました。再度お試しください。");
+      setError("一部の更新に失敗しました。もう一度お試しください。");
     }
   }
 
@@ -123,7 +149,7 @@ export default function TodayStart({ onEmptyInbox }) {
     }
   }
 
-  /** 自動選択（上位10件ON/他OFF） */
+  /** 自動選択（上位10件ON、他OFF） */
   async function autoPick() {
     if (dailyReportId == null) return;
     const sorted = [...items].sort(byDueAndPriority);
@@ -138,7 +164,7 @@ export default function TodayStart({ onEmptyInbox }) {
     await bulkApply(toEnable, toDisable);
   }
 
-  /** 全選択 / 選択解除 */
+  /** 全選択 / 選択解除（当日日報に紐づくもののみ対象） */
   async function selectAll() {
     if (dailyReportId == null) return;
     const toEnable = items
@@ -147,8 +173,9 @@ export default function TodayStart({ onEmptyInbox }) {
     await bulkApply(toEnable, []);
   }
   async function clearAll() {
+    if (dailyReportId == null) return;
     const toDisable = items
-      .filter((i) => i.daily_report_id != null)
+      .filter((i) => i.daily_report_id === dailyReportId)
       .map((i) => i.id);
     await bulkApply([], toDisable);
   }
@@ -166,9 +193,7 @@ export default function TodayStart({ onEmptyInbox }) {
     <div className="p-4 space-y-3">
       <h2 className="text-lg font-bold">今日の開始</h2>
 
-      {error && (
-        <div className="bg-red-100 text-red-700 p-2 rounded">{error}</div>
-      )}
+      {error && <div className="bg-red-100 text-red-700 p-2 rounded">{error}</div>}
 
       <div className="flex gap-2">
         <button className="px-3 py-1 rounded border" onClick={autoPick}>
@@ -199,16 +224,16 @@ export default function TodayStart({ onEmptyInbox }) {
               <div className="flex-1">
                 <div className="font-medium">
                   {i.title}
-                  {overdue && (
-                    <span className="ml-2 text-xs text-red-600">期限超過</span>
-                  )}
+                  {overdue && <span className="ml-2 text-xs text-red-600">期限超過</span>}
                 </div>
                 <div className="text-xs text-gray-500">
                   期日: {i.due_at ? new Date(i.due_at).toLocaleString() : "—"}／
                   優先度: {String(i.priority ?? "—")}
                 </div>
               </div>
-              <div className="text-xs text-gray-600">{i.status}</div>
+              <div className="text-xs text-gray-600">
+                {i.status} {i.today_flag ? "(今日)" : ""}
+              </div>
             </li>
           );
         })}
