@@ -32,11 +32,33 @@ function normalizeTagsCsv(body) {
 
 // due_at を組み立てる（JST固定）
 function buildDueAt({ due_at, due_date, due_time }) {
-  if (due_at !== undefined) return due_at;
+  if (due_at !== undefined) return due_at; // すでに timestamptz が来ている想定
   if (!due_date) return undefined;
   const time = (typeof due_time === 'string' && /^\d{2}:\d{2}$/.test(due_time)) ? due_time : '00:00';
   return `${due_date}T${time}:00+09:00`;
 }
+
+// JST日付（YYYY-MM-DD）を決める。明示指定を優先し、なければ now() をJST化。
+function resolveJstDate(inputDate) {
+  if (typeof inputDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(inputDate)) return inputDate;
+  // DB側で決定したい場面もあるので SQLで使う式を返すこともあるが、
+  // ここはプレーン値返却（クエリ側で ($2::date) のように受ける）
+  // 呼び元が null を渡した場合に限定して DB式を使う分岐を各所に設ける。
+  return null;
+}
+
+/** YYYY-MM-DD に日数を足すユーティリティ（JST日付用） */
+function addDaysYmd(ymd, days) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  // JST基準で計算したいので、UTCの15時=JST 0時として設定
+  const base = new Date(Date.UTC(y, m - 1, d, 15, 0, 0));
+  base.setUTCDate(base.getUTCDate() + days);
+  const yy = base.getUTCFullYear();
+  const mm = String(base.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(base.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
 
 /* ======================= Items: CRUD / List ======================= */
 
@@ -134,7 +156,6 @@ router.post('/items', async (req, res) => {
       (user_id, title, description, status, today_flag, priority, due_at, category, unit,
        target_amount, remaining_amount, tags_text, plan_start_at, plan_end_at, daily_report_id)
     VALUES ($1,$2,$3,'INBOX'::todo.item_status,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-
     RETURNING *`;
   const vals = [
     userId, title, description ?? null,
@@ -319,34 +340,65 @@ router.post('/items/:id/finish', async (req, res) => {
 /* ======================= Day (v1.5仕様) ======================= */
 
 /**
- * GET /day/start
- * - 当日の daily_reports を自動生成（なければ）
- * - 表示対象:
- *   1) 当日の daily_report_id に紐づく items（チェックON表示用）
- *   2) daily_report_id IS NULL かつ status != DONE の items（候補）
+ * 共通：当日の daily_reports を upsert してIDを返す
+ * - dateStr が null の場合は JST今日、そうでなければその日付
  */
-router.get('/day/start', async (req, res) => {
-  const userId = getUserId(req);
-  if (!userId) return res.status(401).json({ error: 'no user id in token' });
-
-  try {
-    // 当日レポートUPSERT（report_date = JSTのcurrent_date相当でOK）
-    const { rows: drRows } = await db.query(`
+async function upsertDailyReportAndGetId(userId, dateStr /* YYYY-MM-DD or null */) {
+  if (dateStr) {
+    const { rows } = await db.query(
+      `
       WITH upsert AS (
         INSERT INTO todo.daily_reports (user_id, report_date, period_start_at, created_at, updated_at)
-        VALUES ($1, current_date, now(), now(), now())
+        VALUES ($1, $2::date, now(), now(), now())
         ON CONFLICT (user_id, report_date) DO NOTHING
         RETURNING id
       )
       SELECT id FROM upsert
       UNION ALL
-      SELECT id FROM todo.daily_reports WHERE user_id = $1 AND report_date = current_date
+      SELECT id FROM todo.daily_reports WHERE user_id = $1 AND report_date = $2::date
       LIMIT 1
-    `, [userId]);
+      `,
+      [userId, dateStr]
+    );
+    return rows[0]?.id || null;
+  } else {
+    const { rows } = await db.query(
+      `
+      WITH jst AS ( SELECT (now() AT TIME ZONE 'Asia/Tokyo')::date AS d ),
+      upsert AS (
+        INSERT INTO todo.daily_reports (user_id, report_date, period_start_at, created_at, updated_at)
+        SELECT $1, jst.d, now(), now(), now() FROM jst
+        ON CONFLICT (user_id, report_date) DO NOTHING
+        RETURNING id
+      )
+      SELECT id FROM upsert
+      UNION ALL
+      SELECT dr.id FROM todo.daily_reports dr, jst
+       WHERE dr.user_id = $1 AND dr.report_date = jst.d
+      LIMIT 1
+      `,
+      [userId]
+    );
+    return rows[0]?.id || null;
+  }
+}
 
-    const dailyReportId = drRows[0]?.id;
+/**
+ * GET /day/start?date=YYYY-MM-DD（省略可）
+ * - 当日の daily_reports を自動生成（なければ）
+ * - 表示対象:
+ *   1) 当日の daily_report_id に紐づく items（チェックON表示用）
+ *   2) daily_report_id IS NULL かつ status != DONE の items（候補）
+ */
+async function handleGetDayStart(req, res) {
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'no user id in token' });
 
-    // 対象アイテム取得
+  const dateStr = resolveJstDate(req.query?.date);
+
+  try {
+    const dailyReportId = await upsertDailyReportAndGetId(userId, dateStr);
+
     const { rows: items } = await db.query(
       `
       SELECT i.*
@@ -370,14 +422,14 @@ router.get('/day/start', async (req, res) => {
     console.error('GET /todo/day/start error:', e);
     res.status(500).json({ error: 'internal-error' });
   }
-});
+}
+router.get('/day/start', handleGetDayStart);
 
 /**
  * POST /day/start/confirm
- * - 「今日の開始」でチェックONになった items を当日の daily_report_id に紐付け
  * body: { daily_report_id: number, item_ids: number[] }
  */
-router.post('/day/start/confirm', async (req, res) => {
+async function handlePostDayStartConfirm(req, res) {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: 'no user id in token' });
 
@@ -398,86 +450,249 @@ router.post('/day/start/confirm', async (req, res) => {
     console.error('POST /todo/day/start/confirm error:', e);
     res.status(500).json({ error: 'confirm failed' });
   }
-});
+}
+router.post('/day/start/confirm', handlePostDayStartConfirm);
 
 /**
  * POST /day/close
- * - 当日の daily_reports.period_end_at を now() に更新
- * - 当日のレポートに紐づく items のうち DONE 以外をコピーし、翌日以降候補へ戻す
+ * body: {
+ *   date?: "YYYY-MM-DD",
+ *   memo?: string,
+ *   items?: [{ id:number, planned_minutes?:number|null, spent_minutes?:number|null,
+ *              remaining_amount?:number|null, note?:string }]
+ * }
  */
-router.post('/day/close', async (req, res) => {
+async function handlePostDayClose(req, res) {
   const userId = getUserId(req);
-  if (!userId) return res.status(401).json({ error: 'no user id in token' });
+  if (!userId) return res.status(401).json({ error: 'unauthorized' });
+
+  const dateStr = resolveJstDate(req.body?.date);
+  const memo = typeof req.body?.memo === 'string' ? req.body.memo : '';
+  const inputs = Array.isArray(req.body?.items) ? req.body.items : [];
+
+  // JST 境界（24:00は使わない）
+  function jstBounds(ymd) {
+    const start = `${ymd}T00:00:00+09:00`;
+    const end   = `${addDaysYmd(ymd, 1)}T00:00:00+09:00`;
+    return { start, end };
+  }
+
+  // 指定日の日報（id と YYYY-MM-DD をDB側で取得）
+  async function pickDailyReportRow() {
+    if (dateStr) {
+      const r = await db.query(
+        `SELECT dr.*, to_char(dr.report_date, 'YYYY-MM-DD') AS ymd
+           FROM todo.daily_reports dr
+          WHERE dr.user_id=$1 AND dr.report_date=$2::date
+          LIMIT 1`,
+        [userId, dateStr]
+      );
+      return r.rows[0] || null;
+    } else {
+      const r = await db.query(
+        `WITH jst AS (SELECT (now() AT TIME ZONE 'Asia/Tokyo')::date d)
+         SELECT dr.*, to_char(dr.report_date, 'YYYY-MM-DD') AS ymd
+           FROM todo.daily_reports dr, jst
+          WHERE dr.user_id=$1 AND dr.report_date=jst.d
+          LIMIT 1`,
+        [userId]
+      );
+      return r.rows[0] || null;
+    }
+  }
 
   await db.query('BEGIN');
   try {
-    // 当日レポート取得（存在しなければここで終わり）
-    const { rows: drRows } = await db.query(
-      `SELECT id FROM todo.daily_reports WHERE user_id = $1 AND report_date = current_date`,
-      [userId]
-    );
-    if (!drRows[0]) {
+    const dr = await pickDailyReportRow();
+    if (!dr) {
       await db.query('ROLLBACK');
-      return res.json({ ok: true, note: 'no daily_report for today' });
+      return res.json({ ok: true, note: 'no daily_report for the date' });
     }
-    const drId = drRows[0].id;
+    const reportId = dr.id;
+    const ymd = dr.ymd; // ← DBで安全に生成
+    const { start: dayStart, end: dayEnd } = jstBounds(ymd);
 
-    // 未完了（DONE以外）をコピー
+    // 当日日報に紐づく items
+    const { rows: itemsRows } = await db.query(
+      `SELECT *
+         FROM todo.items
+        WHERE user_id=$1 AND daily_report_id=$2
+        ORDER BY COALESCE(plan_start_at, due_at, created_at), priority, id`,
+      [userId, reportId]
+    );
+    const itemIdList = itemsRows.map(i => Number(i.id)); // 型統一
+
+    // 当日に交差する sessions を item ごとに抽出（JST境界で切り詰め）
+    const { rows: rawSessions } = await db.query(
+      `
+      WITH bounds AS (SELECT $2::timestamptz AS day_start, $3::timestamptz AS day_end)
+      SELECT s.item_id,
+             GREATEST(s.start_at, b.day_start) AS start_at,
+             LEAST(COALESCE(s.end_at, now()), b.day_end) AS end_at
+        FROM todo.sessions s
+        CROSS JOIN bounds b
+       WHERE s.user_id=$1
+         AND s.item_id = ANY($4::int[])
+         AND s.start_at < b.day_end
+         AND COALESCE(s.end_at, now()) > b.day_start
+       ORDER BY s.start_at
+      `,
+      [userId, dayStart, dayEnd, itemIdList]
+    );
+
+    // item_id -> セッション配列（seconds付） Map（キーは数値で統一）
+    const sessByItem = new Map();
+    for (const r of rawSessions) {
+      const key = Number(r.item_id);
+      const seconds = Math.max(0, Math.floor((new Date(r.end_at) - new Date(r.start_at)) / 1000));
+      const arr = sessByItem.get(key) || [];
+      arr.push({ start_at: r.start_at, end_at: r.end_at, seconds });
+      sessByItem.set(key, arr);
+    }
+
+    // 入力マップ（planned/spent/remaining/note）
+    const inputMap = new Map();
+    for (const x of inputs) if (x && Number.isInteger(x.id)) inputMap.set(Number(x.id), x);
+
+    // 行ごとに upsert（report_id, item_id が一意）
+    for (const it of itemsRows) {
+      const itemIdNum = Number(it.id);
+      const inp = inputMap.get(itemIdNum) || {};
+
+      // 残量入力があれば items にも反映
+      if (inp.remaining_amount !== undefined) {
+        await db.query(
+          `UPDATE todo.items
+              SET remaining_amount=$3, updated_at=now()
+            WHERE user_id=$1 AND id=$2`,
+          [userId, itemIdNum, inp.remaining_amount === null ? null : Number(inp.remaining_amount)]
+        );
+      }
+
+      // planned は入力優先、無ければ計画時間から算出
+      const planned =
+        (inp.planned_minutes != null) ? Number(inp.planned_minutes) :
+        (it.plan_start_at && it.plan_end_at)
+          ? Math.max(0, Math.round((new Date(it.plan_end_at) - new Date(it.plan_start_at)) / 60000))
+          : null;
+
+      // 当日セッション配列
+      const sessionsArr = sessByItem.get(itemIdNum) || [];
+      const sessionsJson = JSON.stringify(sessionsArr);
+
+      // spent は入力優先、無ければ当日セッション合計（分）
+      const spent =
+        (inp.spent_minutes != null) ? Number(inp.spent_minutes)
+                                    : sessionsArr.reduce((a, s) => a + Math.round(s.seconds / 60), 0);
+
+      // タグ配列
+      const tagsArr = it.tags_text
+        ? String(it.tags_text).split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+
+      // UPSERT（※ UNIQUE INDEX uq_daily_report_items_report_item (report_id, COALESCE(item_id,0)) が必要）
+      await db.query(
+        `
+        INSERT INTO todo.daily_report_items (
+          report_id, item_id, title, status,
+          planned_minutes, spent_minutes,
+          remaining_amount, remaining_unit,
+          tags, note, sort_order, sessions, created_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+        ON CONFLICT (report_id, COALESCE(item_id,0))
+        DO UPDATE SET
+          title = EXCLUDED.title,
+          status = EXCLUDED.status,
+          planned_minutes = EXCLUDED.planned_minutes,
+          spent_minutes = EXCLUDED.spent_minutes,
+          remaining_amount = EXCLUDED.remaining_amount,
+          remaining_unit = EXCLUDED.remaining_unit,
+          tags = EXCLUDED.tags,
+          note = EXCLUDED.note,
+          sessions = EXCLUDED.sessions
+        `,
+        [
+          reportId,
+          itemIdNum,
+          it.title,
+          String(it.status),
+          planned,
+          spent,
+          it.remaining_amount,           // 入力反映後の現値
+          it.unit,
+          tagsArr,
+          (inp.note ?? null),
+          null,                          // sort_order（必要ならフロントから受けて反映）
+          sessionsJson
+        ]
+      );
+    }
+
+    // 日報ヘッダ：period_end_at 更新＋ memo を summary.memo に保存（メモ列があれば差し替え可）
+    await db.query(
+      `UPDATE todo.daily_reports
+          SET period_end_at = now(),
+              summary = jsonb_set(COALESCE(summary,'{}'::jsonb), '{memo}', to_jsonb($2::text), true),
+              updated_at = now()
+        WHERE id = $1`,
+      [reportId, memo]
+    );
+
+    // 未完了（DONE以外）をコピーして翌日候補へ戻す（既存仕様）
     await db.query(
       `
       WITH src AS (
-        SELECT i.*
-        FROM todo.items i
-        WHERE i.user_id = $1
-          AND i.daily_report_id = $2
-          AND i.status <> 'DONE'::todo.item_status
+        SELECT *
+          FROM todo.items
+         WHERE user_id=$1
+           AND daily_report_id=$2
+           AND status <> 'DONE'::todo.item_status
       )
       INSERT INTO todo.items (
         user_id, title, description, status, today_flag, priority,
         due_at, plan_start_at, plan_end_at, category, unit,
-        target_amount, remaining_amount, repeat, repeat_active,
-        repeat_last_resolved_date, tags_text, created_at, updated_at, daily_report_id
+        target_amount, remaining_amount, tags_text,
+        created_at, updated_at, daily_report_id
       )
-      SELECT
-        user_id, title, description,
-        'PAUSED'::todo.item_status, false, priority,
-        due_at, plan_start_at, plan_end_at, category, unit,
-        target_amount, remaining_amount, repeat, repeat_active,
-        repeat_last_resolved_date, tags_text,
-        now(), now(), NULL
-      FROM src
-      `
-      , [userId, drId]
+      SELECT user_id, title, description,
+             'PAUSED'::todo.item_status, false, priority,
+             due_at, plan_start_at, plan_end_at, category, unit,
+             target_amount, remaining_amount, tags_text,
+             now(), now(), NULL
+        FROM src
+      `,
+      [userId, reportId]
     );
 
-    // 当日のレポートを締める
-    await db.query(
-      `UPDATE todo.daily_reports
-          SET period_end_at = now(), updated_at = now()
-        WHERE id = $1`,
-      [drId]
-    );
-
-    // 旧itemsは today_flag を下ろす（status はそのまま: DONEはDONE、その他は現状維持）
+    // 当日日報に紐づく既存 items の today_flag を下ろす
     await db.query(
       `UPDATE todo.items
-          SET today_flag = FALSE, updated_at = now()
-        WHERE user_id = $1 AND daily_report_id = $2`,
-      [userId, drId]
+          SET today_flag=false, updated_at=now()
+        WHERE user_id=$1 AND daily_report_id=$2`,
+      [userId, reportId]
     );
 
     await db.query('COMMIT');
-    res.json({ ok: true, daily_report_id: drId });
+
+    res.json({
+      ok: true,
+      daily_report_id: reportId
+    });
   } catch (e) {
-    await db.query('ROLLBACK'); console.error(e);
+    await db.query('ROLLBACK');
+    console.error(e);
     res.status(500).json({ error: 'close failed' });
   }
-});
+}
+
+router.post('/day/close', handlePostDayClose);
 
 /* ===== 互換エイリアス（既存パスが残っている場合のため） ===== */
-router.get ('/start',          (req, res, next) => router.handle({ ...req, url: '/day/start'          }, res, next));
-router.post('/commit',         (req, res, next) => router.handle({ ...req, url: '/day/start/confirm'  }, res, next));
-router.post('/close',          (req, res, next) => router.handle({ ...req, url: '/day/close'          }, res, next));
+// 旧実装との互換向け: /start -> /day/start, /commit -> /day/start/confirm, /close -> /day/close
+router.get ('/start',  (req, res) => handleGetDayStart(req, res));
+router.post('/commit', (req, res) => handlePostDayStartConfirm(req, res));
+router.post('/close',  (req, res) => handlePostDayClose(req, res));
 
 /* ======================= Reports (daily summary list) ======================= */
 
@@ -508,8 +723,7 @@ router.get('/reports/daily', async (req, res) => {
 
 /**
  * GET /daily-reports/today
- * - JSTの「今日」の daily_reports を返す（無ければ作って返す）
- * - 戻り値: { id, user_id, report_date, period_start_at, ... }
+ * - JST「今日」の daily_reports を返す（無ければ作って返す）
  */
 router.get('/daily-reports/today', async (req, res) => {
   const userId = getUserId(req);
@@ -543,9 +757,7 @@ router.get('/daily-reports/today', async (req, res) => {
   }
 });
 
-
-
-// 既存詳細系ルーター（必要なら）
+// 詳細レポート系ルーター（既存）
 router.use(require('./reports'));
 
 module.exports = router;
