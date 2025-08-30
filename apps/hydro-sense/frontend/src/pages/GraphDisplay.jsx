@@ -118,7 +118,7 @@ export default function GraphDisplay() {
     try {
       const token = getToken();
       const viewParam = view ? `&view=${view}` : '';
-      const res = await fetch(`/api/ec-graph?type=${type}&range=${range}${viewParam}`, {
+      const res = await fetch(`/api/hydro/ec-graph?type=${type}&range=${range}${viewParam}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',

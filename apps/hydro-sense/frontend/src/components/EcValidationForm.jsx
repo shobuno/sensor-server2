@@ -20,7 +20,7 @@ export default function EcValidationForm() {
       comment,
     };
 
-    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/ec-validations/`, {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/hydro/ec-validations/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

@@ -5,7 +5,7 @@ const path = require("path");
 const db = require(path.resolve(__dirname, "../config/db"));
 
 
-// POST /api/register-ec-log
+// POST /api/hydro/register-ec-log
 router.post("/", async (req, res) => {
   const { serial_number, target_ec, ec_avg, temperature } = req.body;
 

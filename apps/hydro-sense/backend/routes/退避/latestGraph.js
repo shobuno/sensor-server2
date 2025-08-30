@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
-    console.error('🔥 /api/latest-graph error:', err);
+    console.error('🔥 /api/hydro/latest-graph error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -5,6 +5,7 @@ import TodayStartView from "@todo/pages/TodayStart.jsx";
 import TodayRunView from "@todo/pages/TodayRunView.jsx";
 import TodayCloseView from "@todo/pages/TodayCloseView.jsx";
 import TodoAdd from "@todo/pages/TodoAdd.jsx";
+import TodoDailyReport from "@todo/pages/TodoDailyReport.jsx";
 import { listToday, getStartCandidates } from "@/api/todo";
 
 const CANCEL_FLAG = "todo:add:cancelEdit";
@@ -23,13 +24,18 @@ function useTabFromUrl(defaultTab) {
 
   // タブ変更時は edit を外して URL を更新
   const setTab = useCallback(
-    (nextTab) => {
+    (nextTab, extraParams = {}) => {
       const cur = new URLSearchParams(search);
       if (cur.get("edit")) {
         try { sessionStorage.setItem(CANCEL_FLAG, "1"); } catch {}
         cur.delete("edit");
       }
       if (cur.get("tab") !== nextTab) cur.set("tab", nextTab);
+      // ★ 追加のクエリ（例: { date: '2025-08-30' }）を反映
+      Object.entries(extraParams).forEach(([k, v]) => {
+        if (v === undefined || v === null || v === "") cur.delete(k);
+        else cur.set(k, String(v));
+      });
       nav(`/todo?${cur.toString()}`, { replace: true });
     },
     [nav, search]
@@ -92,6 +98,7 @@ export default function TodoPage() {
         <TabBtn k="start" label="今日の開始" />
         <TabBtn k="today" label="今日" />
         <TabBtn k="add" label={isEdit ? "編集" : "追加"} />
+        <TabBtn k="reports" label="履歴" />
         <TabBtn k="close" label="今日の終了" />
       </div>
 
@@ -119,8 +126,18 @@ export default function TodoPage() {
           />
         )}
 
+        {tab === "reports" && <TodoDailyReport />}
+
         {tab === "close" && (
-          <TodayCloseView onClosed={() => setTab("start")} />
+          <TodayCloseView
+            onClosed={(reportDate) => {
+              // 閉じたら履歴（当日）を開くのが自然ならこちら（任意）
+              // reportDate は "YYYY-MM-DD" を渡せるなら利用
+              if (reportDate) setTab("reports", { date: reportDate });
+              else setTab("start");
+            }}
+          />
+
         )}
       </div>
     </div>

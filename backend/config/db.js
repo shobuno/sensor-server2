@@ -11,5 +11,6 @@ const pool = new Pool({
 });
 
 module.exports = {
+  pool,                                   // ← pool 本体を追加 export
   query: (text, params) => pool.query(text, params),
 };

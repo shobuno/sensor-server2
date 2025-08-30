@@ -5,7 +5,7 @@ const router = express.Router();
 const path = require('path'); 
 const db = require(path.resolve(__dirname, '../config/db'));
 
-// ✅ GET /api/sensor-serials?type=water
+// ✅ GET /api/hidro/sensor-serials?type=water
 router.get('/sensor-serials', async (req, res) => {
   const type = req.query.type || 'water';
   try {
@@ -21,7 +21,7 @@ router.get('/sensor-serials', async (req, res) => {
   }
 });
 
-// ✅ GET /api/latest-hourly-avg
+// ✅ GET /api/hydro/latest-hourly-avg
 router.get('/latest-hourly-avg', async (req, res) => {
   try {
     const result = await db.query(

@@ -19,9 +19,7 @@ import TopBar from './components/TopBar';
 
 // ✅ Todo
 import TodoPage from '@todo/pages/TodoPage.jsx';
-// import TodayCloseView from '@todo/pages/TodayCloseView.jsx'; // サブルート化するなら使う
-// import TodoAdd from '@todo/pages/TodoAdd.jsx';               // 使う段階で有効化
-// import TodoClose from '@todo/pages/TodoClose.jsx';           // 廃止
+import TodoDailyReport from '@todo/pages/TodoDailyReport.jsx';
 
 function TodoLayout() {
   return (
@@ -87,6 +85,7 @@ export default function App() {
         }
       >
         <Route index element={<TodoPage />} />
+        <Route path="daily-report" element={<TodoDailyReport />} />
         {/* 必要になったらサブルートを追加:
         <Route path="close" element={<TodayCloseView />} />
         <Route path="add"   element={<TodoAdd />} />
