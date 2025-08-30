@@ -1,10 +1,6 @@
-// sensor-server/apps/todo/frontend/src/pages/TodayStart.jsx
+// sensor-server2/apps/todo/frontend/src/pages/TodayStart.jsx
 import { useEffect, useMemo, useState } from "react";
-import {
-  getStartCandidates,   // ← 以前からある認証付きクライアント経由
-  listItems,            // ← 同上
-  api,                  // ← axios インスタンス（@/api/todo 側で Authorization 付与）
-} from "@/api/todo";
+import { getDayStart, listItems, patchItem } from "@/lib/apiTodo"; // ← 認証付きAPIだけ使う
 
 /** 並び順: 予定開始/期限 → priority（小さいほど高）→ id */
 function byDueAndPriority(a, b) {
@@ -31,34 +27,31 @@ export default function TodayStart({ onEmptyInbox }) {
   const [items, setItems] = useState([]);
   const [error, setError] = useState(null);
 
-  // 1) 初期ロード：当日の候補 + 既に今日に入っているもの
+  // 初期ロード：当日日報ID＋候補一覧（認証付きクライアント経由）
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        // 以前と同じ経路（@/api/todo）で取得
-        const [candRes, todayRes, head] = await Promise.all([
-          getStartCandidates(),
-          listItems({ today: 1, limit: 1000 }),
-          api.get("/day/start"), // ← ここも api 経由。レスに daily_report_id を持たせてある想定
-        ]);
-        if (!mounted) return;
-        const list = candRes?.items ?? [];
-        const todayArr = Array.isArray(todayRes) ? todayRes : (todayRes?.items ?? []);
-        setDailyReportId(head?.data?.daily_report_id ?? null);
+        const head = await getDayStart(); // { daily_report_id, items } を返す
+        setDailyReportId(head?.daily_report_id ?? null);
 
-        // 既に今日のものはチェック済みとして表示する（＝ daily_report_id で判定）
-        const todayIds = new Set(todayArr.map(i => i.id));
-        setItems(
-          list.map(i =>
-            todayIds.has(i.id) ? { ...i, daily_report_id: head?.data?.daily_report_id ?? null } : i
-          )
+        // 既に today に入っている一覧（フロント表示のためだけに利用）
+        const todayRes = await listItems({ today: 1, limit: 1000 });
+        const todayIds = new Set(
+          Array.isArray(todayRes) ? todayRes.map(i => i.id) : (todayRes?.items ?? []).map(i => i.id)
         );
-        if (list.length === 0 && onEmptyInbox) onEmptyInbox();
+
+        const base = head?.items ?? [];
+        const merged = base.map(i =>
+          todayIds.has(i.id) ? { ...i, daily_report_id: head?.daily_report_id ?? null } : { ...i, daily_report_id: null }
+        );
+        if (!mounted) return;
+        setItems(merged);
+        if (merged.length === 0 && onEmptyInbox) onEmptyInbox();
       } catch (e) {
-        if (mounted) setError("認証エラーまたは読み込みに失敗しました。ログイン状態をご確認ください。");
+        if (mounted) setError("認証エラーまたは読み込み失敗。ログイン状態をご確認ください。");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -76,77 +69,47 @@ export default function TodayStart({ onEmptyInbox }) {
     return new Set(items.filter(i => i.due_at && new Date(i.due_at).getTime() < now).map(i => i.id));
   }, [items]);
 
-  // 2) 単体PATCH（楽観更新）— 認証は api 側で付与
-  async function patchDailyReportId(itemId, nextDrId) {
+  // 単体PATCH（楽観更新）— 認証付き patchItem を必ず使用
+  async function setDr(itemId, nextDrId) {
     const prev = items;
     const next = items.map(it => it.id === itemId ? { ...it, daily_report_id: nextDrId } : it);
     setItems(next);
     try {
-      await api.patch(`/items/${itemId}`, { daily_report_id: nextDrId });
-    } catch (e) {
-      setItems(prev); // 失敗したら戻す
-      throw e;
-    }
-  }
-
-  // 3) 一括PATCH（差分のみ送る）
-  async function bulkSet(idsToEnable, idsToDisable) {
-    const tasks = [];
-    idsToEnable.forEach(id => {
-      const cur = items.find(i => i.id === id);
-      if (cur && cur.daily_report_id !== dailyReportId) tasks.push(patchDailyReportId(id, dailyReportId));
-    });
-    idsToDisable.forEach(id => {
-      const cur = items.find(i => i.id === id);
-      if (cur && cur.daily_report_id != null) tasks.push(patchDailyReportId(id, null));
-    });
-    if (!tasks.length) return;
-    try {
-      await Promise.all(tasks);
+      await patchItem(itemId, { daily_report_id: nextDrId });
     } catch {
-      // ずれたら再同期
-      try {
-        const { data } = await api.get("/day/start");
-        setDailyReportId(data?.daily_report_id ?? null);
-        const todayIds = new Set((await listItems({ today: 1, limit: 1000 }))?.items?.map(i => i.id) ?? []);
-        setItems(items.map(i =>
-          todayIds.has(i.id) ? { ...i, daily_report_id: data?.daily_report_id ?? null } : { ...i, daily_report_id: null }
-        ));
-      } catch {}
-    }
-  }
-
-  // 4) チェックの即時反映
-  async function toggleCheck(item) {
-    if (dailyReportId == null) return;
-    const checked = item.daily_report_id === dailyReportId;
-    try {
-      await patchDailyReportId(item.id, checked ? null : dailyReportId);
-    } catch {
+      setItems(prev);
       setError("更新に失敗しました。もう一度お試しください。");
     }
   }
 
-  // 5) 自動選択・全選択・解除（全部リアルタイム反映）
+  // チェックトグル（即時反映）
+  async function toggle(item) {
+    if (dailyReportId == null) return;
+    const checked = item.daily_report_id === dailyReportId;
+    await setDr(item.id, checked ? null : dailyReportId);
+  }
+
+  // 自動選択（上位10件ON、他OFF）
   async function autoPick() {
     if (dailyReportId == null) return;
     const sorted = [...items].sort(byDueAndPriority);
     const wantOn = new Set(sorted.slice(0, 10).map(i => i.id));
-    const toEnable = [], toDisable = [];
-    items.forEach(i => {
-      const isOn = i.daily_report_id === dailyReportId;
-      if (wantOn.has(i.id) && !isOn) toEnable.push(i.id);
-      if (!wantOn.has(i.id) && isOn) toDisable.push(i.id);
-    });
-    await bulkSet(toEnable, toDisable);
+    const ops = [];
+    for (const it of items) {
+      const isOn = it.daily_report_id === dailyReportId;
+      if (wantOn.has(it.id) && !isOn) ops.push(setDr(it.id, dailyReportId));
+      if (!wantOn.has(it.id) && isOn) ops.push(setDr(it.id, null));
+    }
+    await Promise.all(ops);
   }
+
   async function selectAll() {
-    const toEnable = items.filter(i => i.daily_report_id !== dailyReportId).map(i => i.id);
-    await bulkSet(toEnable, []);
+    if (dailyReportId == null) return;
+    await Promise.all(items.filter(i => i.daily_report_id !== dailyReportId).map(i => setDr(i.id, dailyReportId)));
   }
+
   async function clearAll() {
-    const toDisable = items.filter(i => i.daily_report_id != null).map(i => i.id);
-    await bulkSet([], toDisable);
+    await Promise.all(items.filter(i => i.daily_report_id != null).map(i => setDr(i.id, null)));
   }
 
   if (loading) return <div className="p-4">読み込み中…</div>;
@@ -177,7 +140,7 @@ export default function TodayStart({ onEmptyInbox }) {
           const overdue = overdueIds.has(i.id);
           return (
             <li key={i.id} className="p-3 flex items-center gap-3">
-              <input type="checkbox" checked={checked} onChange={() => toggleCheck(i)} />
+              <input type="checkbox" checked={checked} onChange={() => toggle(i)} />
               <div className="flex-1">
                 <div className="font-medium">
                   {i.title}
@@ -192,7 +155,7 @@ export default function TodayStart({ onEmptyInbox }) {
           );
         })}
       </ul>
-      {/* 確定ボタンは撤去（リアルタイム反映） */}
+      {/* 「確定」ボタンは無し（リアルタイム反映） */}
     </div>
   );
 }
