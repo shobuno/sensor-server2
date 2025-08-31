@@ -60,6 +60,7 @@ function addDaysYmd(ymd, days) {
 }
 
 
+
 /* ======================= Items: CRUD / List ======================= */
 
 /** GET /items/:id */
@@ -424,6 +425,78 @@ async function handleGetDayStart(req, res) {
   }
 }
 router.get('/day/start', handleGetDayStart);
+
+// GET /api/todo/reports/:id
+router.get('/reports/:id', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const id = Number(req.params.id);
+    if (!userId || !id) return res.status(400).json({ error: 'bad request' });
+
+    const { rows } = await db.query(
+      `SELECT id, report_date, period_start_at, period_end_at, created_at, updated_at
+         FROM todo.daily_reports
+        WHERE id = $1 AND user_id = $2`,
+      [id, userId]
+    );
+
+    if (!rows.length) return res.status(404).json({ error: 'not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('GET /todo/reports/:id error:', e);
+    res.status(500).json({ error: 'internal error' });
+  }
+});
+
+
+// 例: PATCH /todo/reports/169
+// body: { period_start_at: "2025-08-31T09:00:00+09:00" } でも
+//       { start_at: "..." } でもOK（互換）にする
+router.patch('/reports/:id', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const reportId = Number(req.params.id);
+
+    // 互換: 古いキー名でも受ける
+    const period_start_at =
+      req.body?.period_start_at ?? req.body?.start_at ?? null;
+    const period_end_at =
+      req.body?.period_end_at ?? req.body?.end_at ?? null;
+
+    if (!reportId || !userId) {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    if (period_start_at == null && period_end_at == null) {
+      // デバッグしやすいように内容も返す
+      return res.status(400).json({ error: 'nothing to update', body: req.body });
+    }
+
+    const sets = [];
+    const vals = [userId, reportId];
+    if (period_start_at != null) {
+      sets.push(`period_start_at = $${vals.length + 1}`);
+      vals.push(new Date(period_start_at));
+    }
+    if (period_end_at != null) {
+      sets.push(`period_end_at = $${vals.length + 1}`);
+      vals.push(new Date(period_end_at));
+    }
+
+    const sql = `
+      UPDATE todo.daily_reports
+         SET ${sets.join(', ')}, updated_at = NOW()
+       WHERE user_id = $1 AND id = $2
+       RETURNING id, report_date, period_start_at, period_end_at, created_at, updated_at
+    `;
+    const { rows } = await db.query(sql, vals);
+    if (rows.length === 0) return res.status(404).json({ error: 'not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('PATCH /todo/reports/:id error:', e, 'body=', req.body);
+    res.status(500).json({ error: 'internal error' });
+  }
+});
+
 
 /**
  * POST /day/start/confirm

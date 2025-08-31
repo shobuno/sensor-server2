@@ -18,6 +18,41 @@ const titleFromDateStr = (iso) => {
   return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}の日報`;
 };
 
+/** 実績(分)の算出：spent_minutes を優先し、無ければ sessions から秒数合計→分へ丸め */
+function actualMinutesOf(item) {
+  if (item?.spent_minutes != null) {
+    const n = Number(item.spent_minutes);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const ses = Array.isArray(item?.sessions) ? item.sessions : [];
+  if (!ses.length) return 0;
+  let sec = 0;
+  for (const s of ses) {
+    if (typeof s?.seconds === "number") {
+      sec += Math.max(0, s.seconds);
+    } else if (s?.start_at) {
+      const st = new Date(s.start_at).getTime();
+      const et = s?.end_at ? new Date(s.end_at).getTime() : Date.now();
+      sec += Math.max(0, Math.floor((et - st) / 1000));
+    }
+  }
+  return Math.round(sec / 60);
+}
+
+/** 予定(分)の算出：planned_minutes を優先し、無ければ plan_start_at〜plan_end_at の差分 */
+function plannedMinutesOf(item) {
+  if (item?.planned_minutes != null) {
+    const n = Number(item.planned_minutes);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (item?.plan_start_at && item?.plan_end_at) {
+    const st = new Date(item.plan_start_at).getTime();
+    const et = new Date(item.plan_end_at).getTime();
+    return Math.max(0, Math.round((et - st) / 60000));
+  }
+  return 0;
+}
+
 /* ===== timeline (共通) ===== */
 function SessionsTimeline({ sessions, plan_start_at, plan_end_at, winStart, winEnd }) {
   const toPct = (dt) => {
@@ -30,7 +65,7 @@ function SessionsTimeline({ sessions, plan_start_at, plan_end_at, winStart, winE
   const gridBg =
     "repeating-linear-gradient(90deg, transparent, transparent calc(100%/12 - 1px), rgba(0,0,0,0.06) calc(100%/12))";
 
-  // 2h刻みのラベル（タイムライン枠の外）
+  // 2h刻みのラベル
   const spanMs = winEnd - winStart;
   const labels = [];
   const startH = new Date(winStart); startH.setMinutes(0,0,0);
@@ -42,6 +77,16 @@ function SessionsTimeline({ sessions, plan_start_at, plan_end_at, winStart, winE
 
   return (
     <div className="w-full">
+      <div className="mb-0.5 h-4 text-[10px] text-gray-600 relative select-none">
+        <div className="absolute left-0">{`${winStart.getHours()}時`}</div>
+        <div className="absolute right-0">{`${winEnd.getHours()}時`}</div>
+        {labels.map((lb, i) => (
+          <div key={i} className="absolute -translate-x-1/2" style={{ left: `${lb.p}%` }}>
+            {lb.text}
+          </div>
+        ))}
+      </div>
+
       <div className="relative h-10 border rounded" style={{ background: gridBg }}>
         {/* 予定（上段） */}
         <div className="absolute inset-x-0 top-0 h-[46%]">
@@ -57,7 +102,6 @@ function SessionsTimeline({ sessions, plan_start_at, plan_end_at, winStart, winE
             />
           )}
         </div>
-        {/* 間隔 */}
         <div className="absolute inset-x-0 top-[46%] h-[6%]" />
         {/* 実績（下段） */}
         <div className="absolute inset-x-0 bottom-0 h-[46%]">
@@ -78,16 +122,6 @@ function SessionsTimeline({ sessions, plan_start_at, plan_end_at, winStart, winE
             );
           })}
         </div>
-      </div>
-      {/* 外側ラベル */}
-      <div className="mt-0.5 h-4 text-[10px] text-gray-600 relative select-none">
-        <div className="absolute left-0">{`${winStart.getHours()}時`}</div>
-        <div className="absolute right-0">{`${winEnd.getHours()}時`}</div>
-        {labels.map((lb, i) => (
-          <div key={i} className="absolute -translate-x-1/2" style={{ left: `${lb.p}%` }}>
-            {lb.text}
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -114,7 +148,7 @@ export default function TodoDailyReport() {
     try {
       const data = await fetchJson(`/api/todo/reports?date=${dayStr}&with_sessions=1`);
       setHeader(data.header);
-      setItems(data.items || []);
+      setItems(Array.isArray(data.items) ? data.items : []);
     } catch (e) {
       alert(`日報読み込み失敗: ${e.message}`);
     } finally {
@@ -135,12 +169,20 @@ export default function TodoDailyReport() {
     setSaving(true);
     try {
       await fetchJson(`/api/todo/reports`, {
-        method: "POST",
+        method: "PATCH",
         body: JSON.stringify({
           date: editDate,
           title: titleFromDateStr(editDate),
           memo: header?.memo || "",
-          items: items.map((it, i) => ({ ...it, sort_order: i + 1 })),
+          items: items.map((it, i) => ({
+            id: it.id,
+            planned_minutes: it.planned_minutes ?? null,
+            spent_minutes: it.spent_minutes ?? null,
+            remaining_amount: it.remaining_amount ?? null,
+            remaining_unit: it.remaining_unit ?? null,
+            note: it.note ?? null,
+            sort_order: i + 1,
+          })),
         }),
       });
       await loadDay(editDate);
@@ -169,12 +211,38 @@ export default function TodoDailyReport() {
     };
   }, [header?.period_start_at, header?.period_end_at, editDate]);
 
+  /* ===== サマリ（プレビューは計算値を強制使用） ===== */
+  const totalsFromItems = useMemo(() => {
+    const planned = items.reduce((acc, it) => acc + plannedMinutesOf(it), 0);
+    const actual  = items.reduce((acc, it) => acc + actualMinutesOf(it), 0);
+    const done    = items.filter((it) => it?.status === "DONE").length;
+    const paused  = items.filter((it) => it?.status === "PAUSED").length;
+    return { planned, actual, done, paused, total: items.length };
+  }, [items]);
+  const isPreview = !header?.id;
+
+  const summary = isPreview
+    ? {
+        total_planned_min: totalsFromItems.planned,
+        total_spent_min: totalsFromItems.actual,
+        completed: totalsFromItems.done,
+        paused: totalsFromItems.paused,
+        total: totalsFromItems.total,
+      }
+    : {
+        total_planned_min: header?.summary?.total_planned_min ?? totalsFromItems.planned,
+        total_spent_min:   header?.summary?.total_spent_min   ?? totalsFromItems.actual,
+        completed:         header?.summary?.completed         ?? totalsFromItems.done,
+        paused:            header?.summary?.paused            ?? totalsFromItems.paused,
+        total:             header?.summary?.total             ?? totalsFromItems.total,
+      };
+
   /* ========== レンダリング ========== */
   return (
     <div className="p-4 space-y-4">
       <h1 className="text-xl font-semibold">{titleFromDateStr(editDate)}</h1>
 
-      {/* ===== 操作列：PC（従来のまま） ===== */}
+      {/* 操作列：PC */}
       <div className="hidden lg:flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button className="px-3 py-1.5 rounded bg-black text-white" onClick={openToday}>今日を開く</button>
@@ -187,7 +255,7 @@ export default function TodoDailyReport() {
         </div>
       </div>
 
-      {/* ===== 操作列：スマホ（省スペース） ===== */}
+      {/* 操作列：スマホ */}
       <div className="lg:hidden flex items-center gap-2">
         <button className="px-3 py-1.5 rounded bg-black text-white" onClick={openToday}>今日</button>
         <button className="px-3 py-1 rounded border" onClick={() => moveDay(-1)}>←</button>
@@ -210,18 +278,16 @@ export default function TodoDailyReport() {
         onChange={(e) => setHeader((h) => ({ ...(h || {}), memo: e.target.value }))}
       />
 
-      {/* サマリ */}
-      {header?.summary && (
-        <div className="text-sm lg:text-xs opacity-80">
-          合計実績: {header.summary.total_spent_min ?? 0} 分　完了: {header.summary.completed ?? 0}　
-          停止: {header.summary.paused ?? 0}　件数: {header.summary.total ?? 0}
-        </div>
-      )}
+      {/* サマリ（予定合計/実績合計の両方を常に表示） */}
+      <div className="text-sm lg:text-xs opacity-80">
+        予定合計: {summary.total_planned_min} 分　実績合計: {summary.total_spent_min} 分　
+        完了: {summary.completed}　停止: {summary.paused}　件数: {summary.total}
+      </div>
 
-      {/* ====== PC：従来のテーブル UI（そのまま復元） ====== */}
+      {/* ====== PC：テーブル UI ====== */}
       <div className="hidden lg:block">
-        {/* 列ラベル固定 */}
-        <div className="grid grid-cols-[2rem_28ch_12ch_1fr] gap-x-1 text-xs text-gray-500 px-1">
+        {/* 列ヘッダ（予定/実績列を少し広げる） */}
+        <div className="grid grid-cols-[2rem_28ch_14ch_1fr] gap-x-1 text-xs text-gray-500 px-1">
           <div>#</div>
           <div>タイトル / 残</div>
           <div>予定 / 実績(分)</div>
@@ -233,7 +299,7 @@ export default function TodoDailyReport() {
             <colgroup>
               <col style={{ width: "2rem" }} />
               <col style={{ width: "26ch" }} />
-              <col style={{ width: "7.5ch" }} />
+              <col style={{ width: "10ch" }} />
               <col />
             </colgroup>
             <tbody>
@@ -267,7 +333,7 @@ export default function TodoDailyReport() {
                         <span className="opacity-70">予</span>
                         <input
                           type="number"
-                          className="h-6 w-10 border rounded px-1 py-0.5 text-right"
+                          className="h-6 w-11 border rounded px-1 py-0.5 text-right"
                           value={it.planned_minutes ?? ""}
                           onChange={(e) =>
                             setItemField(idx, "planned_minutes", e.target.value ? Number(e.target.value) : null)
@@ -278,10 +344,10 @@ export default function TodoDailyReport() {
                         <span className="opacity-70">実</span>
                         <input
                           type="number"
-                          className="h-6 w-10 border rounded px-1 py-0.5 text-right"
-                          value={it.spent_minutes ?? ""}
+                          className="h-6 w-11 border rounded px-1 py-0.5 text-right"
+                          value={actualMinutesOf(it)}
                           onChange={(e) =>
-                            setItemField(idx, "spent_minutes", e.target.value ? Number(e.target.value) : null)
+                            setItemField(idx, "spent_minutes", e.target.value === "" ? null : Number(e.target.value))
                           }
                         />
                       </div>
@@ -306,7 +372,7 @@ export default function TodoDailyReport() {
         </div>
       </div>
 
-      {/* ====== スマホ：カード UI（入力は残/予/実を一列に） ====== */}
+      {/* ====== スマホ：カード UI ====== */}
       <div className="lg:hidden space-y-3">
         {items.map((it, idx) => (
           <div key={idx} className="border rounded-xl p-3 shadow-sm">
@@ -323,7 +389,13 @@ export default function TodoDailyReport() {
                   setItemField(idx, "remaining_amount", e.target.value === "" ? null : Number(e.target.value))
                 }
               />
-              <span className="text-gray-600">分</span>
+              <input
+                type="text"
+                className="h-9 w-14 border rounded px-2"
+                value={it.remaining_unit ?? ""}
+                onChange={(e) => setItemField(idx, "remaining_unit", e.target.value || null)}
+                placeholder="単位"
+              />
 
               <span className="ml-3 text-gray-600">予</span>
               <input
@@ -339,10 +411,20 @@ export default function TodoDailyReport() {
               <input
                 type="number"
                 className="h-9 w-16 border rounded px-2 text-right"
-                value={it.spent_minutes ?? ""}
+                value={actualMinutesOf(it)}
                 onChange={(e) =>
-                  setItemField(idx, "spent_minutes", e.target.value ? Number(e.target.value) : null)
+                  setItemField(idx, "spent_minutes", e.target.value === "" ? null : Number(e.target.value))
                 }
+              />
+            </div>
+
+            <div className="mt-2">
+              <SessionsTimeline
+                sessions={it.sessions}
+                plan_start_at={it.plan_start_at}
+                plan_end_at={it.plan_end_at}
+                winStart={timelineWindow.winStart}
+                winEnd={timelineWindow.winEnd}
               />
             </div>
           </div>
