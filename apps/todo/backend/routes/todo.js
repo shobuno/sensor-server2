@@ -521,6 +521,11 @@ router.post('/day/start/confirm', handlePostDayStartConfirm);
  *   items?: [{ id:number, planned_minutes?:number|null, spent_minutes?:number|null,
  *              remaining_amount?:number|null, note?:string }]
  * }
+ *
+ * 仕様（合意版）:
+ * - 未完了 items はコピーせず再利用（daily_report_id を NULL、today_flag=false にして繰り越し）
+ * - 完了 items は daily_report_items にスナップショット後に物理削除
+ * - スナップショット確定後、該当 report に紐づく items の sessions をユーザー分だけ全削除
  */
 async function handlePostDayClose(req, res) {
   const userId = getUserId(req);
@@ -609,7 +614,7 @@ async function handlePostDayClose(req, res) {
     const inputMap = new Map();
     for (const x of inputs) if (x && Number.isInteger(x.id)) inputMap.set(Number(x.id), x);
 
-    // 1件ずつ手動UPSERT（UPDATE→INSERT）
+    // --- スナップショット（手動UPSERT） ---
     for (const it of itemsRows) {
       const itemIdNum = Number(it.id);
       const inp = inputMap.get(itemIdNum) || {};
@@ -640,7 +645,7 @@ async function handlePostDayClose(req, res) {
         ? String(it.tags_text).split(',').map(s => s.trim()).filter(Boolean)
         : [];
 
-      // UPDATE
+      // UPDATE → INSERT
       const upd = await db.query(
         `
         UPDATE todo.daily_report_items
@@ -652,27 +657,26 @@ async function handlePostDayClose(req, res) {
                remaining_unit = $8,
                tags = $9::text[],
                note = $10,
-               sessions = $11::jsonb -- 明示キャスト
+               sessions = $11::jsonb
          WHERE report_id = $1 AND item_id = $2
          RETURNING id
         `,
         [
-          reportId,                  // $1
-          itemIdNum,                 // $2
-          it.title,                  // $3
-          String(it.status),         // $4
-          planned,                   // $5
-          spent,                     // $6
-          it.remaining_amount,       // $7
-          it.unit,                   // $8
-          tagsArr,                   // $9
-          (inp.note ?? null),        // $10
-          sessionsJson               // $11
+          reportId,            // $1
+          itemIdNum,           // $2
+          it.title,            // $3
+          String(it.status),   // $4
+          planned,             // $5
+          spent,               // $6
+          it.remaining_amount, // $7
+          it.unit,             // $8
+          tagsArr,             // $9
+          (inp.note ?? null),  // $10
+          sessionsJson         // $11
         ]
       );
 
       if (upd.rowCount === 0) {
-        // INSERT（sort_orderは省略）
         await db.query(
           `
           INSERT INTO todo.daily_report_items (
@@ -681,31 +685,26 @@ async function handlePostDayClose(req, res) {
             remaining_amount, remaining_unit,
             tags, note, sessions, created_at
           )
-          VALUES (
-            $1, $2, $3, $4,
-            $5, $6,
-            $7, $8,
-            $9::text[], $10, $11::jsonb, now()
-          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10,$11::jsonb, now())
           `,
           [
-            reportId,                 // $1
-            itemIdNum,                // $2
-            it.title,                 // $3
-            String(it.status),        // $4
-            planned,                  // $5
-            spent,                    // $6
-            it.remaining_amount,      // $7
-            it.unit,                  // $8
-            tagsArr,                  // $9
-            (inp.note ?? null),       // $10
-            sessionsJson              // $11
+            reportId,
+            itemIdNum,
+            it.title,
+            String(it.status),
+            planned,
+            spent,
+            it.remaining_amount,
+            it.unit,
+            tagsArr,
+            (inp.note ?? null),
+            sessionsJson
           ]
         );
       }
-    } // ← for (const it of itemsRows) のクローズ
+    }
 
-    // レポートの締め
+    // --- レポートの締め ---
     await db.query(
       `
       UPDATE todo.daily_reports
@@ -717,37 +716,39 @@ async function handlePostDayClose(req, res) {
       [reportId, memo]
     );
 
-    // 未完了アイテムを翌日にスライドコピー
+    // --- 該当 items に紐づく sessions（当ユーザー分のみ）を全削除 ---
     await db.query(
       `
-      WITH src AS (
-        SELECT *
-          FROM todo.items
-         WHERE user_id=$1
-           AND daily_report_id=$2
-           AND status <> 'DONE'::todo.item_status
-      )
-      INSERT INTO todo.items (
-        user_id, title, description, status, today_flag, priority,
-        due_at, plan_start_at, plan_end_at, category, unit,
-        target_amount, remaining_amount, tags_text,
-        created_at, updated_at, daily_report_id
-      )
-      SELECT user_id, title, description,
-             'PAUSED'::todo.item_status, false, priority,
-             due_at, plan_start_at, plan_end_at, category, unit,
-             target_amount, remaining_amount, tags_text,
-             now(), now(), NULL
-        FROM src
+      DELETE FROM todo.sessions
+       WHERE user_id = $1
+         AND item_id = ANY($2::int[])
+      `,
+      [userId, itemIdList]
+    );
+
+    // --- 未完了は再利用・完了は物理削除 ---
+    // 未完了: daily_report_id を外し、today_flag=false
+    await db.query(
+      `
+      UPDATE todo.items
+         SET daily_report_id = NULL,
+             today_flag = FALSE,
+             updated_at = now()
+       WHERE user_id = $1
+         AND daily_report_id = $2
+         AND status <> 'DONE'::todo.item_status
       `,
       [userId, reportId]
     );
 
-    // 今日のフラグを落とす
+    // 完了: 物理削除
     await db.query(
-      `UPDATE todo.items
-          SET today_flag=false, updated_at=now()
-        WHERE user_id=$1 AND daily_report_id=$2`,
+      `
+      DELETE FROM todo.items
+       WHERE user_id = $1
+         AND daily_report_id = $2
+         AND status = 'DONE'::todo.item_status
+      `,
       [userId, reportId]
     );
 
@@ -759,7 +760,6 @@ async function handlePostDayClose(req, res) {
     res.status(500).json({ error: 'close failed' });
   }
 }
-
 
 router.post('/day/close', handlePostDayClose);
 
