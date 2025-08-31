@@ -50,14 +50,14 @@ router.post('/', async (req, res) => {
     }
 
     // EC値が異常値であればスキップ
-    if (ecAnalogValue < 11000) {
-      console.warn(`[${new Date().toLocaleString()}]❌ ecAnalogValue が異常値:`, {
-        ecAnalogValue: ecAnalogValue,
-        sensor1: sensor1.value, type1,
-        sensor2: sensor2.value, type2
-      });
-      return res.status(400).json({ error: 'ecAnalogValueが異常のため、登録をスキップします' });
-    }
+    // if (ecAnalogValue < 11000) {
+    //  console.warn(`[${new Date().toLocaleString()}]❌ ecAnalogValue が異常値:`, {
+    //     ecAnalogValue: ecAnalogValue,
+    //     sensor1: sensor1.value, type1,
+    //     sensor2: sensor2.value, type2
+    //   });
+    //   return res.status(400).json({ error: 'ecAnalogValueが異常のため、登録をスキップします' });
+    // }
 
     //console.log('📥 登録データ内容:', {
     //  timestamp,
