@@ -345,7 +345,7 @@ async function upsertDailyReportAndGetId(userId, dateStr /* YYYY-MM-DD or null *
       WITH upsert AS (
         INSERT INTO todo.daily_reports (user_id, report_date, period_start_at, created_at, updated_at)
         VALUES ($1, $2::date, now(), now(), now())
-        ON CONFLICT ON CONSTRAINT daily_reports_user_date_uniq DO NOTHING
+        ON CONFLICT (user_id, report_date) DO NOTHING
         RETURNING id
       )
       SELECT id FROM upsert
@@ -363,7 +363,7 @@ async function upsertDailyReportAndGetId(userId, dateStr /* YYYY-MM-DD or null *
       upsert AS (
         INSERT INTO todo.daily_reports (user_id, report_date, period_start_at, created_at, updated_at)
         SELECT $1, jst.d, now(), now(), now() FROM jst
-        ON CONFLICT ON CONSTRAINT daily_reports_user_date_uniq DO NOTHING
+        ON CONFLICT (user_id, report_date) DO NOTHING
         RETURNING id
       )
       SELECT id FROM upsert
@@ -566,6 +566,7 @@ async function handlePostDayClose(req, res) {
       await db.query('ROLLBACK');
       return res.json({ ok: true, note: 'no daily_report for the date' });
     }
+
     const reportId = dr.id;
     const ymd = dr.ymd;
     const { start: dayStart, end: dayEnd } = jstBounds(ymd);
@@ -608,7 +609,7 @@ async function handlePostDayClose(req, res) {
     const inputMap = new Map();
     for (const x of inputs) if (x && Number.isInteger(x.id)) inputMap.set(Number(x.id), x);
 
-    // 行ごとに upsert（※ UNIQUE CONSTRAINT uq_daily_report_items_report_item (report_id, item_id) が必要）
+    // 1件ずつ手動UPSERT（UPDATE→INSERT）
     for (const it of itemsRows) {
       const itemIdNum = Number(it.id);
       const inp = inputMap.get(itemIdNum) || {};
@@ -639,53 +640,84 @@ async function handlePostDayClose(req, res) {
         ? String(it.tags_text).split(',').map(s => s.trim()).filter(Boolean)
         : [];
 
-      await db.query(
+      // UPDATE
+      const upd = await db.query(
         `
-        INSERT INTO todo.daily_report_items (
-          report_id, item_id, title, status,
-          planned_minutes, spent_minutes,
-          remaining_amount, remaining_unit,
-          tags, note, sort_order, sessions, created_at
-        )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
-        ON CONFLICT ON CONSTRAINT uq_daily_report_items_report_item
-        DO UPDATE SET
-          title = EXCLUDED.title,
-          status = EXCLUDED.status,
-          planned_minutes = EXCLUDED.planned_minutes,
-          spent_minutes = EXCLUDED.spent_minutes,
-          remaining_amount = EXCLUDED.remaining_amount,
-          remaining_unit = EXCLUDED.remaining_unit,
-          tags = EXCLUDED.tags,
-          note = EXCLUDED.note,
-          sessions = EXCLUDED.sessions
+        UPDATE todo.daily_report_items
+           SET title = $3,
+               status = $4,
+               planned_minutes = $5,
+               spent_minutes = $6,
+               remaining_amount = $7,
+               remaining_unit = $8,
+               tags = $9::text[],
+               note = $10,
+               sessions = $11::jsonb -- 明示キャスト
+         WHERE report_id = $1 AND item_id = $2
+         RETURNING id
         `,
         [
-          reportId,
-          itemIdNum,
-          it.title,
-          String(it.status),
-          planned,
-          spent,
-          it.remaining_amount,
-          it.unit,
-          tagsArr,
-          (inp.note ?? null),
-          null,
-          sessionsJson
+          reportId,                  // $1
+          itemIdNum,                 // $2
+          it.title,                  // $3
+          String(it.status),         // $4
+          planned,                   // $5
+          spent,                     // $6
+          it.remaining_amount,       // $7
+          it.unit,                   // $8
+          tagsArr,                   // $9
+          (inp.note ?? null),        // $10
+          sessionsJson               // $11
         ]
       );
-    }
 
+      if (upd.rowCount === 0) {
+        // INSERT（sort_orderは省略）
+        await db.query(
+          `
+          INSERT INTO todo.daily_report_items (
+            report_id, item_id, title, status,
+            planned_minutes, spent_minutes,
+            remaining_amount, remaining_unit,
+            tags, note, sessions, created_at
+          )
+          VALUES (
+            $1, $2, $3, $4,
+            $5, $6,
+            $7, $8,
+            $9::text[], $10, $11::jsonb, now()
+          )
+          `,
+          [
+            reportId,                 // $1
+            itemIdNum,                // $2
+            it.title,                 // $3
+            String(it.status),        // $4
+            planned,                  // $5
+            spent,                    // $6
+            it.remaining_amount,      // $7
+            it.unit,                  // $8
+            tagsArr,                  // $9
+            (inp.note ?? null),       // $10
+            sessionsJson              // $11
+          ]
+        );
+      }
+    } // ← for (const it of itemsRows) のクローズ
+
+    // レポートの締め
     await db.query(
-      `UPDATE todo.daily_reports
-          SET period_end_at = now(),
-              summary = jsonb_set(COALESCE(summary,'{}'::jsonb), '{memo}', to_jsonb($2::text), true),
-              updated_at = now()
-        WHERE id = $1`,
+      `
+      UPDATE todo.daily_reports
+         SET period_end_at = now(),
+             summary = jsonb_set(COALESCE(summary,'{}'::jsonb), '{memo}', to_jsonb($2::text), true),
+             updated_at = now()
+       WHERE id = $1
+      `,
       [reportId, memo]
     );
 
+    // 未完了アイテムを翌日にスライドコピー
     await db.query(
       `
       WITH src AS (
@@ -711,6 +743,7 @@ async function handlePostDayClose(req, res) {
       [userId, reportId]
     );
 
+    // 今日のフラグを落とす
     await db.query(
       `UPDATE todo.items
           SET today_flag=false, updated_at=now()
@@ -719,7 +752,6 @@ async function handlePostDayClose(req, res) {
     );
 
     await db.query('COMMIT');
-
     res.json({ ok: true, daily_report_id: reportId });
   } catch (e) {
     await db.query('ROLLBACK');
@@ -727,6 +759,7 @@ async function handlePostDayClose(req, res) {
     res.status(500).json({ error: 'close failed' });
   }
 }
+
 
 router.post('/day/close', handlePostDayClose);
 
@@ -779,7 +812,7 @@ router.get('/daily-reports/today', async (req, res) => {
       upsert AS (
         INSERT INTO todo.daily_reports (user_id, report_date, period_start_at, created_at, updated_at)
         SELECT $1, jst.d, now(), now(), now() FROM jst
-        ON CONFLICT ON CONSTRAINT daily_reports_user_date_uniq DO NOTHING
+        ON CONFLICT (user_id, report_date) DO NOTHING
         RETURNING *
       )
       SELECT * FROM upsert
