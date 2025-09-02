@@ -38,7 +38,7 @@ function buildDueAt({ due_at, due_date, due_time }) {
   return `${due_date}T${time}:00+09:00`;
 }
 
-// JST日付（YYYY-MM-DD）を決める。明示指定を優先し、なければ now() をJST化。
+// JST日付（YYYY-MM-DD）を決める。明示指定を優先し、なければ null。
 function resolveJstDate(inputDate) {
   if (typeof inputDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(inputDate)) return inputDate;
   return null;
@@ -628,6 +628,7 @@ async function handlePostDayClose(req, res) {
         );
       }
 
+      // 予定分
       const planned =
         (inp.planned_minutes != null) ? Number(inp.planned_minutes) :
         (it.plan_start_at && it.plan_end_at)
@@ -635,7 +636,16 @@ async function handlePostDayClose(req, res) {
           : null;
 
       const sessionsArr = sessByItem.get(itemIdNum) || [];
-      const sessionsJson = JSON.stringify(sessionsArr);
+
+      // ★各セッション要素に予定情報を付与
+      const sessionsArrWithPlan = sessionsArr.map(s => ({
+        ...s,
+        plan_start_at: it.plan_start_at || null,
+        plan_end_at: it.plan_end_at || null,
+        planned_minutes: (planned ?? null),
+      }));
+
+      const sessionsJson = JSON.stringify(sessionsArrWithPlan);
 
       const spent =
         (inp.spent_minutes != null) ? Number(inp.spent_minutes)
@@ -727,7 +737,6 @@ async function handlePostDayClose(req, res) {
     );
 
     // --- 未完了は再利用・完了は物理削除 ---
-    // 未完了: daily_report_id を外し、today_flag=false
     await db.query(
       `
       UPDATE todo.items
@@ -741,7 +750,6 @@ async function handlePostDayClose(req, res) {
       [userId, reportId]
     );
 
-    // 完了: 物理削除
     await db.query(
       `
       DELETE FROM todo.items

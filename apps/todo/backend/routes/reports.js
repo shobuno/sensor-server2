@@ -233,20 +233,27 @@ async function buildDailyReportFromSnapshot(userId, dateStr, { withSessions = fa
   const toTags = (t) => Array.isArray(t) ? t
     : (t == null ? [] : String(t).replace(/^\{|\}$/g,'').split(',').map(x=>x.trim()).filter(Boolean));
 
-  const items = rowsDri.map(r => ({
-    id: r.item_id,
-    title: r.title,
-    status: String(r.status),
-    remaining_unit: r.remaining_unit,
-    remaining_amount: r.remaining_amount,
-    planned_minutes: r.planned_minutes,
-    spent_minutes: r.spent_minutes,
-    plan_start_at: null,
-    plan_end_at: null,
-    tags: toTags(r.tags),
-    sessions: withSessions ? r.sessions : undefined,
-    note: r.note ?? null
-  }));
+
+  const items = rowsDri.map(r => {
+    const ses = withSessions ? (Array.isArray(r.sessions) ? r.sessions : []) : [];
+    const first = ses.length ? ses[0] : null;
+    return {
+      id: r.item_id,
+      title: r.title,
+      status: String(r.status),
+      remaining_unit: r.remaining_unit,
+      remaining_amount: r.remaining_amount,
+      planned_minutes: r.planned_minutes,
+      spent_minutes: r.spent_minutes,
+      // ★ sessions 先頭に入っている予定を root にも投影（with_sessions=0 なら null）
+      plan_start_at: withSessions ? (first?.plan_start_at ?? null) : null,
+      plan_end_at:   withSessions ? (first?.plan_end_at   ?? null) : null,
+      tags: toTags(r.tags),
+      sessions: withSessions ? ses : undefined,
+      note: r.note ?? null
+    };
+  });
+
 
   const totalSpent = items.reduce((a, x) => a + (x.spent_minutes || 0), 0);
   const completed  = items.filter(x => x.status === 'DONE').length;
