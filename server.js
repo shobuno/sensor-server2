@@ -67,7 +67,9 @@ app.use('/api/admin/users', requireAuth(['admin']), require('./backend/routes/ad
 
 // AutoMesh API（保護）
 const autoMeshApp = require('./apps/AutoMesh/backend/app');
-app.use('/automesh/api', requireAuth, autoMeshApp);
+// 認証必須（必要ならロールを渡す）
+app.use('/automesh/api', requireAuth(), autoMeshApp);
+// 例: app.use('/automesh/api', requireAuth(['admin','automesh_user']), autoMeshApp);
 
 // Todo API（保護）
 const todoApp = require('./apps/todo/backend/app');
