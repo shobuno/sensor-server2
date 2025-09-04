@@ -714,6 +714,20 @@ async function handlePostDayClose(req, res) {
       }
     }
 
+    // ★ 追加：note が未設定(null もしくは空文字)の行に、items.description を後追いコピー
+    await db.query(
+      `
+      UPDATE todo.daily_report_items AS dri
+         SET note = i.description
+        FROM todo.items AS i
+       WHERE dri.report_id = $1
+         AND i.user_id    = $2
+         AND dri.item_id  = i.id
+         AND (dri.note IS NULL OR dri.note = '')
+      `,
+      [reportId, userId]
+    );
+
     // --- レポートの締め ---
     await db.query(
       `
