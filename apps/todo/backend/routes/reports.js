@@ -319,10 +319,11 @@ router.get('/reports', async (req, res) => {
  *   }]
  * }
  *
- * 仕様：
- * - フィールドが「送られてきた」場合だけ更新する（0 や "" も上書き）
- * - 送られてこなかったフィールドは据え置き
- * - 行が無ければ INSERT（未指定フィールドは NULL）
+ * 仕様（本修正）：
+ * - その日の daily_report_items が 0件なら「未保存（プレビュー）」扱い。
+ *   → daily_reports.summary->memo のみ保存し、items は一切作成しない。
+ * - 1件以上ある（保存済み）なら従来通り、送られてきたキーのみ動的 UPDATE。
+ *   なければ INSERT（従来仕様を踏襲）。
  */
 router.patch('/reports', async (req, res) => {
   const userId = getUserId(req);
@@ -347,12 +348,56 @@ router.patch('/reports', async (req, res) => {
               });
 
   try {
-    const head = await fetchDailyReportHead(userId, dateStr);
-    if (!head) return res.status(404).json({ error: 'daily_report not found' });
+    // まずヘッダを取得。なければ作成して memo を入れる（items はまだ作らない）
+    let head = await fetchDailyReportHead(userId, dateStr);
+    if (!head) {
+      const ins = await db.query(
+        `
+        INSERT INTO todo.daily_reports (user_id, report_date, summary)
+        VALUES ($1, $2::date, CASE WHEN $3::text IS NULL THEN NULL ELSE jsonb_build_object('memo', $3::text) END)
+        RETURNING id, user_id, report_date, period_start_at, period_end_at, summary
+        `,
+        [userId, dateStr, memo ?? null]
+      );
+      head = ins.rows[0];
+      // 新規作成＝未保存プレビュー確定。items は作らずメモだけ返す。
+      return res.json({
+        ok: true,
+        saved_date: dateStr,
+        mode: 'preview_memo_saved',
+        snapshot: null
+      });
+    }
 
+    // 既存 head がある場合、items の件数を確認して分岐
+    const { rows: cntRows } = await db.query(
+      `SELECT COUNT(*)::int AS cnt FROM todo.daily_report_items WHERE report_id=$1`,
+      [head.id]
+    );
+    const existingCount = cntRows[0]?.cnt ?? 0;
+
+    // ---- 未保存（プレビュー）：メモだけ保存して終わり ----
+    if (existingCount === 0) {
+      if (memo !== undefined) {
+        await db.query(
+          `UPDATE todo.daily_reports
+              SET summary = jsonb_set(COALESCE(summary,'{}'::jsonb), '{memo}', to_jsonb($3::text), true),
+                  updated_at = now()
+            WHERE user_id=$1 AND id=$2`,
+          [userId, head.id, memo]
+        );
+      }
+      return res.json({
+        ok: true,
+        saved_date: dateStr,
+        mode: 'preview_memo_saved',
+        snapshot: null
+      });
+    }
+
+    // ---- 保存済み：従来通り、items を動的 UPDATE/INSERT ----
     await db.query('BEGIN');
 
-    // メモ更新（上書き）
     if (memo !== undefined) {
       await db.query(
         `UPDATE todo.daily_reports
@@ -376,7 +421,7 @@ router.patch('/reports', async (req, res) => {
       const exists = !!exRows[0];
 
       if (!exists) {
-        // INSERT（未指定フィールドは NULL のまま）
+        // INSERT（未指定フィールドは NULL のまま） ※従来仕様を踏襲
         await db.query(
           `
           INSERT INTO todo.daily_report_items (
@@ -438,10 +483,12 @@ router.patch('/reports', async (req, res) => {
     return res.json({
       ok: true,
       saved_date: dateStr,
+      mode: 'saved_items_updated',
       snapshot: snap || null
     });
   } catch (e) {
-    await db.query('ROLLBACK');
+    try { await db.query('ROLLBACK'); } catch {}
+
     console.error('PATCH /todo/reports error:', e);
     return res.status(500).json({ error: 'internal-error' });
   }

@@ -729,15 +729,15 @@ async function handlePostDayClose(req, res) {
     );
 
     // --- レポートの締め ---
+    // メモは更新しない（summary->memo を触らない）
     await db.query(
       `
       UPDATE todo.daily_reports
          SET period_end_at = now(),
-             summary = jsonb_set(COALESCE(summary,'{}'::jsonb), '{memo}', to_jsonb($2::text), true),
              updated_at = now()
        WHERE id = $1
       `,
-      [reportId, memo]
+      [reportId]
     );
 
     // --- 該当 items に紐づく sessions（当ユーザー分のみ）を全削除 ---
