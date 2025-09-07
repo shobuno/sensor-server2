@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { getDayStart, getReport, patchReport, patchItem, listItems,
          listTemplates, createTemplate, addTemplateToToday, createItem } from "../lib/apiTodo";
+import EditItemModal from "../components/EditItemModal";
 import { fetchJson } from "@/auth";
 import useSessionState from "@todo/hooks/useSessionState.js";
 
@@ -741,438 +742,193 @@ export default function TodayStart({ onEmptyInbox }) {
         </div>
       )}
 
-      {/* 本体リスト */}
+      {/* 本体リスト（スマホ=縦積み／sm+=右端に操作） */}
       <ul className="divide-y border rounded">
         {sorted.map((i) => {
-          const checked = kindTab === "normal" ? i.daily_report_id === dailyReportId : false;
-          const overdue = isOverdue(i);
-          const isDone = String(i.status || "").toUpperCase() === "DONE";
+          const checked  = kindTab === "normal" ? i.daily_report_id === dailyReportId : false;
+          const overdue  = isOverdue(i);
+          const isDone   = String(i.status || "").toUpperCase() === "DONE";
           const todoKind = isTodoKind(i);
 
           return (
             <li
               key={i.id}
-              className="p-3 flex items-center gap-3 cursor-pointer hover:bg-muted/30"
+              className="p-3 hover:bg-muted/30 cursor-pointer"
               onClick={() => onRowClick(i)}
               onDoubleClick={(e) => onRowDoubleClick(e, i)}
             >
-              {kindTab === "normal" && (
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleCheck(i)}
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label="今日に入れる"
-                  title="今日に入れる"
-                />
-              )}
-
-              <div className={`flex-1 min-w-0 ${todoKind && isDone ? "opacity-60 line-through" : ""}`}>
-                <div className="font-medium flex items-center gap-2">
-                  <span className="truncate">{i.title}</span>
-                  {i.priority && <span className="text-yellow-500">{"★".repeat(i.priority)}</span>}
-                  {overdue && <span className="ml-1 text-xs text-white bg-red-600 rounded px-1.5 py-0.5">期限超過</span>}
-                  {todoKind && <span className="ml-1 text-[10px] text-white bg-slate-500 rounded px-1 py-0.5">TODO</span>}
-                </div>
-
-                <div className="text-xs text-gray-500 flex flex-wrap items-center gap-2 mt-1">
-                  {(i.due_at || i.due_date) && (
-                    <span className="text-muted-foreground">
-                      {i.due_at ? `期限: ${fmtLocal(i.due_at)}` : `期限: ${i.due_date} 00:00`}
-                    </span>
-                  )}
-                  {i.category && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCategoryFilter(categoryFilter === i.category ? null : i.category);
-                      }}
-                      className={chipClass(categoryFilter === i.category)}
-                    >
-                      {i.category}
-                    </button>
-                  )}
-                  {(i.tags || []).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleTag(t);
-                      }}
-                      className={chipClass(tagFilter.has(t))}
-                    >
-                      #{t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {kindTab === "template" ? (
-                  <>
-                    <button
-                      className="px-3 py-1 text-xs rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addFromTemplate(i.id);
-                      }}
-                    >
-                      今日に追加
-                    </button>
-                    {/* 編集（鉛筆）も表示：normal と同じUI */}
-                    <button
-                      className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditing(i);
-                      }}
-                      title="編集"
-                      aria-label="編集"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 inline-block align-[-2px]" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M13.586 3a2 2 0 0 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zM12.379 5.207 3 14.586V18h3.414l9.379-9.379-3.414-3.414z"/>
-                      </svg>
-                      <span className="ml-1 hidden sm:inline">編集</span>
-                    </button>
-                    <button
-                      className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeItem(i.id);
-                      }}
-                    >
-                      削除
-                    </button>
-                  </>
+              <div className="grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-3 items-start">
+                {/* 左: チェック（normal のみ） */}
+                {kindTab === "normal" ? (
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleCheck(i)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label="今日に入れる"
+                    title="今日に入れる"
+                    className="mt-1"
+                  />
                 ) : (
-                  <>
-                    {isTodoKind(i) && (
-                      <label
-                        className="inline-flex items-center gap-1 text-xs select-none"
-                        onClick={(e) => e.stopPropagation()}
-                        title="完了（TODO型）"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isDone}
-                          onChange={async (e) => {
-                            try {
-                              await toggleDoneTodoKind(i, e.target.checked, setItems);
-                            } catch {
-                              setError("完了状態の更新に失敗しました。");
-                            }
-                          }}
-                        />
-                        <span>完了</span>
-                      </label>
-                    )}
-                    <button
-                      className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditing(i);
-                      }}
-                    >
-                      編集
-                    </button>
-                    <button
-                      className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeItem(i.id);
-                      }}
-                    >
-                      削除
-                    </button>
-                  </>
+                  <div className="w-5" aria-hidden />
                 )}
+
+                {/* 中: タイトル（横いっぱい）＋ メタ（下段） */}
+                <div className={`min-w-0 ${todoKind && isDone ? "opacity-60 line-through" : ""}`}>
+                  {/* タイトルは改行可（truncateをやめる） */}
+                  <div className="font-medium text-base leading-snug break-words">
+                    {i.title}
+                  </div>
+
+                  {/* メタ情報は下段にまとめる（折返し可） */}
+                  <div className="mt-1 text-xs text-gray-500 flex flex-wrap items-center gap-2">
+                    {/* 優先度・バッジ類をタイトルから分離 */}
+                    {i.priority && <span className="hidden sm:inline text-yellow-500">{"★".repeat(i.priority)}</span>}
+
+                    {overdue && (
+                      <span className="px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>
+                    )}
+                    {todoKind && (
+                      <span className="text-[10px] text-white bg-slate-500 rounded px-1 py-0.5">TODO</span>
+                    )}
+
+                    {(i.due_at || i.due_date) && (
+                      <span className="text-muted-foreground">
+                        {i.due_at ? `期限: ${fmtLocal(i.due_at)}` : `期限: ${i.due_date} 00:00`}
+                      </span>
+                    )}
+
+                    {i.category && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCategoryFilter(categoryFilter === i.category ? null : i.category);
+                        }}
+                        className={chipClass(categoryFilter === i.category) + " hidden sm:inline-flex"}
+                      >
+                        {i.category}
+                      </button>
+                    )}
+
+                    {/* タグは幅を取りすぎないよう普通のchipで折返し */}
+                    {(i.tags || []).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onToggleTag(t); }}
+                        className={chipClass(tagFilter.has(t)) + " hidden sm:inline-flex"}
+                      >
+                        #{t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 右: 操作（モバイルでは下段に回す） */}
+                  <div
+                    className={
+                      "col-span-2 sm:col-span-1 sm:justify-self-end mt-2 sm:mt-0 items-center gap-2 " +
+                      (kindTab === "template" ? "flex" : "hidden sm:flex")
+                    }
+                  >
+                  {kindTab === "template" ? (
+                    <>
+                      <button
+                        className="px-3 py-1 text-xs rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addFromTemplate(i.id);
+                        }}
+                      >
+                        今日に追加
+                      </button>
+                      <button
+                        className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
+                        onClick={(e) => { e.stopPropagation(); setEditing(i); }}
+                        title="編集"
+                        aria-label="編集"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 inline-block align-[-2px]" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M13.586 3a2 2 0 0 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zM12.379 5.207 3 14.586V18h3.414l9.379-9.379-3.414-3.414z"/>
+                        </svg>
+                        <span className="ml-1 hidden sm:inline">編集</span>
+                      </button>
+                      <button
+                        className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
+                        onClick={(e) => { e.stopPropagation(); removeItem(i.id); }}
+                      >
+                        削除
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {isTodoKind(i) && (
+                        <label
+                          className="inline-flex items-center gap-1 text-xs select-none"
+                          onClick={(e) => e.stopPropagation()}
+                          title="完了（TODO型）"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isDone}
+                            onChange={async (e) => {
+                              try { await toggleDoneTodoKind(i, e.target.checked, setItems); }
+                              catch { setError("完了状態の更新に失敗しました。"); }
+                            }}
+                          />
+                          <span>完了</span>
+                        </label>
+                      )}
+                      <button
+                        className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
+                        onClick={(e) => { e.stopPropagation(); setEditing(i); }}
+                      >
+                        編集
+                      </button>
+                      <button
+                        className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
+                        onClick={(e) => { e.stopPropagation(); removeItem(i.id); }}
+                      >
+                        削除
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </li>
           );
         })}
       </ul>
 
-      {editing && <EditModal item={editing} onCancel={closeModal} onSave={saveEdit} />}
+      {editing && (
+        <EditItemModal
+          item={editing}
+          onCancel={closeModal}
+          onSave={saveEdit}
+          onDelete={async (id) => {
+            try {
+              await removeItem(id); // 既存の削除関数を流用
+            } finally {
+              closeModal();
+            }
+          }}
+          defaultUnit="分"
+        />
+      )}
     </div>
   );
 }
 
 /* ====== 編集モーダル ====== */
-function EditModal({ item, onCancel, onSave }) {
-  const [title, setTitle] = useState(item.title || "");
-  const [priority, setPriority] = useState(item.priority ?? 3);
-  const [category, setCategory] = useState(item.category ?? "");
-  const [tags, setTags] = useState(item.tags || []);
-  const [description, setDescription] = useState(item.description ?? "");
-
-  const kindStr = item?.kind ? String(item.kind).toUpperCase() : "";
-  const [todoFlag, setTodoFlag] = useState(Boolean(item?.todo_flag));
-
-  // 期限
-  const [dueDate, setDueDate] = useState(isoToYmdJST(item?.due_at));
-  const [dueTime, setDueTime] = useState(isoToHmJST(item?.due_at));
-  const [noDue, setNoDue] = useState(!item?.due_at);
-
-  // 予定開始/終了
-  const [noStart, setNoStart] = useState(!item?.plan_start_at);
-  const [noEnd, setNoEnd] = useState(!item?.plan_end_at);
-  const [planStartLocal, setPlanStartLocal] = useState(isoToLocalDTInputJST(item?.plan_start_at));
-  const [planEndLocal, setPlanEndLocal] = useState(isoToLocalDTInputJST(item?.plan_end_at));
-
-  // 予定量 / 残量 / 単位
-  const [targetAmount, setTargetAmount] = useState(item?.target_amount ?? "");
-  const [remainingAmount, setRemainingAmount] = useState(item?.remaining_amount ?? "");
-  const [unit, setUnit] = useState(item?.unit ?? "");
-
-  const [tagInput, setTagInput] = useState("");
-  const addTag = () => {
-    const t = tagInput.trim();
-    if (!t) return;
-    setTags((arr) => (arr.includes(t) ? arr : [...arr, t]));
-    setTagInput("");
-  };
-  const removeTag = (t) => setTags((arr) => arr.filter((x) => x !== t));
-
-  const setMidnight = () => {
-    setNoDue(false);
-    setDueTime("00:00");
-  };
-  const setDayEnd = () => {
-    setNoDue(false);
-    setDueTime("23:59");
-  };
-  const clearTime = () => setDueTime("");
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onCancel}>
-      <div className="bg-white rounded-2xl shadow-xl w-[min(760px,94vw)] p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2">
-          <h3 className="text-lg font-semibold">アイテムを編集</h3>
-          {kindStr && (
-            <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full border bg-muted text-muted-foreground">
-              kind: {kindStr}
-            </span>
-          )}
-          {todoFlag && <span className="text-[10px] px-2 py-0.5 rounded bg-slate-600 text-white">TODO</span>}
-        </div>
-
-        <label className="flex items-center gap-2 text-sm border rounded p-2">
-          <input type="checkbox" checked={todoFlag} onChange={(e) => setTodoFlag(e.target.checked)} />
-          <span>TODO型（開始ボタンなし・チェックで完了）</span>
-        </label>
-
-        <label className="block text-sm">
-          <span className="text-gray-600">タイトル</span>
-          <input className="mt-1 w-full rounded border px-2 py-1" value={title} onChange={(e) => setTitle(e.target.value)} />
-        </label>
-
-        {/* 期限 */}
-        <div className="grid grid-cols-[1fr_120px_auto_auto_auto] gap-2 items-end">
-          <label className="block text-sm">
-            <span className="text-gray-600">期限（日付）</span>
-            <input
-              type="date"
-              className="mt-1 w-full rounded border px-2 py-1"
-              disabled={noDue}
-              value={noDue ? "" : dueDate || ""}
-              onChange={(e) => {
-                setNoDue(false);
-                setDueDate(e.target.value);
-              }}
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="text-gray-600">時刻</span>
-            <input
-              type="time"
-              className="mt-1 w-full rounded border px-2 py-1"
-              disabled={noDue}
-              value={noDue ? "" : dueTime || ""}
-              onChange={(e) => {
-                setNoDue(false);
-                setDueTime(e.target.value);
-              }}
-            />
-          </label>
-          <button type="button" className="h-9 px-3 rounded border text-sm" disabled={noDue} onClick={setMidnight}>
-            0:00
-          </button>
-          <button type="button" className="h-9 px-3 rounded border text-sm" disabled={noDue} onClick={setDayEnd}>
-            23:59
-          </button>
-          <button type="button" className="h-9 px-3 rounded border text-sm" disabled={noDue} onClick={clearTime}>
-            ×
-          </button>
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={noDue} onChange={(e) => setNoDue(e.target.checked)} />
-          <span>期限なし</span>
-        </label>
-
-        {/* 優先度 */}
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm">
-            <span className="text-gray-600">優先度(1..5)</span>
-            <input
-              type="number"
-              min={1}
-              max={5}
-              className="mt-1 w-full rounded border px-2 py-1"
-              value={priority}
-              onChange={(e) => setPriority(Math.min(5, Math.max(1, Number(e.target.value) || 3)))}
-            />
-          </label>
-          <div />
-        </div>
-
-        {/* 予定開始/終了 */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="text-sm">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={noStart} onChange={(e) => setNoStart(e.target.checked)} />
-              <span className="text-gray-600">開始なし</span>
-            </label>
-            <input
-              type="datetime-local"
-              disabled={noStart}
-              className="mt-1 w-full rounded border px-2 py-1"
-              value={noStart ? "" : planStartLocal}
-              onChange={(e) => setPlanStartLocal(e.target.value)}
-            />
-          </div>
-          <div className="text-sm">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={noEnd} onChange={(e) => setNoEnd(e.target.checked)} />
-              <span className="text-gray-600">終了なし</span>
-            </label>
-            <input
-              type="datetime-local"
-              disabled={noEnd}
-              className="mt-1 w-full rounded border px-2 py-1"
-              value={noEnd ? "" : planEndLocal}
-              onChange={(e) => setPlanEndLocal(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* カテゴリ / タグ */}
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm">
-            <span className="text-gray-600">カテゴリ</span>
-            <input className="mt-1 w-full rounded border px-2 py-1" value={category} onChange={(e) => setCategory(e.target.value)} />
-          </label>
-          <label className="block text-sm">
-            <span className="text-gray-600">タグ</span>
-            <div className="mt-1 flex gap-2">
-              <input
-                className="flex-1 rounded border px-2 py-1"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addTag();
-                  }
-                }}
-                placeholder="タグを入力してEnter"
-              />
-              <button className="px-2 py-1 rounded border" onClick={addTag}>
-                追加
-              </button>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {tags.map((t) => (
-                <span key={t} className="px-2 py-0.5 rounded-full border text-sm">
-                  #{t}
-                  <button className="ml-1 text-xs text-red-600" onClick={() => removeTag(t)}>
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          </label>
-        </div>
-
-        {/* 予定量 / 残量 / 単位 */}
-        <div className="grid grid-cols-3 gap-3">
-          <label className="block text-sm">
-            <span className="text-gray-600">予定量</span>
-            <input
-              type="number"
-              step="any"
-              className="mt-1 w-full rounded border px-2 py-1"
-              placeholder="例) 30"
-              value={targetAmount}
-              onChange={(e) => setTargetAmount(e.target.value)}
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="text-gray-600">残量</span>
-            <input
-              type="number"
-              step="any"
-              className="mt-1 w-full rounded border px-2 py-1"
-              placeholder="例) 10"
-              value={remainingAmount}
-              onChange={(e) => setRemainingAmount(e.target.value)}
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="text-gray-600">単位</span>
-            <input
-              className="mt-1 w-full rounded border px-2 py-1"
-              placeholder="例) 分 / 件 / 冊"
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-            />
-          </label>
-        </div>
-
-        {/* 説明 */}
-        <label className="block text-sm">
-          <span className="text-gray-600">説明</span>
-          <textarea className="mt-1 w-full rounded border px-2 py-1 min-h-[120px]" value={description} onChange={(e) => setDescription(e.target.value)} />
-        </label>
-
-        <div className="flex gap-2 justify-end pt-2">
-          <button className="px-3 py-1 rounded border" onClick={onCancel}>
-            キャンセル
-          </button>
-          <button
-            className="px-3 py-1 rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
-            onClick={() =>
-              onSave({
-                id: item.id,
-                title,
-                priority,
-                category: category || null,
-                tags,
-                description,
-                todo_flag: !!todoFlag,
-
-                // 期限
-                no_due: !!noDue,
-                due_at: noDue ? null : ymdHmToIsoJST(dueDate, dueTime),
-
-                // 予定開始/終了
-                plan_start_at: noStart ? null : localDTInputToIsoJST(planStartLocal),
-                plan_end_at: noEnd ? null : localDTInputToIsoJST(planEndLocal),
-
-                // 予定量/残量/単位
-                target_amount: targetAmount,
-                remaining_amount: remainingAmount,
-                unit: unit || null,
-              })
-            }
-          >
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+/* ===== モーダル表示中は背景スクロールを止める小フック ===== */
+function useLockBodyScroll(active) {
+  useEffect(() => {
+    if (!active) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [active]);
 }
 
 /* ---------- 小物 ---------- */
