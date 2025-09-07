@@ -630,36 +630,6 @@ export default function TodayStart({ onEmptyInbox }) {
 
       {error && <div className="bg-red-100 text-red-700 p-2 rounded">{error}</div>}
 
-      {/* タブ行 */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          className={`px-3 py-2 rounded-2xl ${kindTab==='normal' ? 'bg-black text-white' : 'bg-gray-100'}`}
-          onClick={()=>setKindTab('normal')}
-        >normal</button>
-        <button
-          className={`px-3 py-2 rounded-2xl ${kindTab==='template' ? 'bg-black text-white' : 'bg-gray-100'}`}
-          onClick={()=>setKindTab('template')}
-        >テンプレート</button>
-        <button
-          className={`px-3 py-2 rounded-2xl ${kindTab==='repeat' ? 'bg-black text-white' : 'bg-gray-100'}`}
-          onClick={()=>setKindTab('repeat')}
-        >繰り返し項目</button>
-      </div>
-
-      {/* 選択件数 + 新規ボタンを下段に移動 */}
-      <div className="mt-2 flex items-center justify-between">
-        {selectedCount > 0 && (
-          <span className="text-sm text-gray-600">選択 {selectedCount}件</span>
-        )}
-        <button
-          className="px-4 py-2 rounded-lg bg-emerald-600 text-white"
-          onClick={handleCreateNew}
-        >
-          新規
-        </button>
-      </div>
-
-
       {/* normal モードのヘッダ（開始時刻+チェック済み表示） */}
       {kindTab === "normal" && (
         <div className="flex flex-wrap items-center gap-3 p-3 border rounded">
@@ -691,6 +661,35 @@ export default function TodayStart({ onEmptyInbox }) {
           </label>
         </div>
       )}
+
+      {/* タブ行 */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          className={`px-3 py-2 rounded-2xl ${kindTab==='normal' ? 'bg-black text-white' : 'bg-gray-100'}`}
+          onClick={()=>setKindTab('normal')}
+        >normal</button>
+        <button
+          className={`px-3 py-2 rounded-2xl ${kindTab==='template' ? 'bg-black text-white' : 'bg-gray-100'}`}
+          onClick={()=>setKindTab('template')}
+        >テンプレート</button>
+        <button
+          className={`px-3 py-2 rounded-2xl ${kindTab==='repeat' ? 'bg-black text-white' : 'bg-gray-100'}`}
+          onClick={()=>setKindTab('repeat')}
+        >繰り返し項目</button>
+      </div>
+
+      {/* 選択件数 + 新規ボタンを下段に移動 */}
+      <div className="mt-2 flex items-center justify-between">
+        {selectedCount > 0 && (
+          <span className="text-sm text-gray-600">選択 {selectedCount}件</span>
+        )}
+        <button
+          className="px-4 py-2 rounded-lg bg-emerald-600 text-white"
+          onClick={handleCreateNew}
+        >
+          新規
+        </button>
+      </div>
 
       {/* インライン・フィルタ */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
