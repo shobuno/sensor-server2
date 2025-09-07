@@ -1,34 +1,26 @@
 // server2/apps/todo/frontend/src/pages/TodayStart.jsx
 import { useEffect, useMemo, useState, useCallback } from "react";
-import {
-   getDayStart,
-   getReport,
-   patchReport,
-   patchItem,
-   } from "../lib/apiTodo";
+import { getDayStart, getReport, patchReport, patchItem, listItems,
+         listTemplates, createTemplate, addTemplateToToday, createItem } from "../lib/apiTodo";
+import { fetchJson } from "@/auth";
+import useSessionState from "@todo/hooks/useSessionState.js";
 
-/** 並び順: 予定開始/期限 → priority（数値小さいほど高）→ id */
-function byDueAndPriority(a, b) {
-  const ad = a?.plan_start_at
-    ? new Date(a.plan_start_at).getTime()
-    : a?.due_at
-    ? new Date(a.due_at).getTime()
-    : Number.POSITIVE_INFINITY;
-  const bd = b?.plan_start_at
-    ? new Date(b.plan_start_at).getTime()
-    : b?.due_at
-    ? new Date(b.due_at).getTime()
-    : Number.POSITIVE_INFINITY;
-  if (ad !== bd) return ad - bd;
-
-  const ap = typeof a?.priority === "number" ? a.priority : 3;
-  const bp = typeof b?.priority === "number" ? b.priority : 3;
-  if (ap !== bp) return ap - bp;
-
-  return (a?.id || 0) - (b?.id || 0);
+/* ====== 日付/時刻ユーティリティ ====== */
+function ymdSlash(ymd) {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [y, m, d] = ymd.split("-");
+  return `${y}/${m}/${d}`;
 }
-
-/** JSTの "HH:mm" を ISO から得る（period_start_at 用） */
+function isoToYmdSlashJST(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
 function hhmmFromISOJST(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -39,75 +31,207 @@ function hhmmFromISOJST(iso) {
     minute: "2-digit",
   }).format(d);
 }
+function parseTagsCsv(csv) {
+  if (!csv) return [];
+  return [...new Set(String(csv).split(",").map((s) => s.trim()).filter(Boolean))];
+}
+function isOverdue(it) {
+  const now = Date.now();
+  if (it?.due_at) {
+    const t = new Date(it.due_at).getTime();
+    return Number.isFinite(t) && t < now;
+  }
+  if (it?.due_date) {
+    const t = new Date(it.due_date + "T00:00:00").getTime();
+    return Number.isFinite(t) && t < now;
+  }
+  return false;
+}
+const isTodoKind = (item) =>
+  (item?.kind && String(item.kind).toUpperCase() === "TODO") || Boolean(item?.todo_flag);
 
-/** "YYYY-MM-DD" → "YYYY/MM/DD" */
-function ymdSlash(ymd) {
-  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
-  const [y, m, d] = ymd.split("-");
-  return `${y}/${m}/${d}`;
+async function toggleDoneTodoKind(item, checked, setItems) {
+  const nextStatus = checked ? "DONE" : "INBOX";
+  const payload = {
+    status: nextStatus,
+    completed_at: checked ? new Date().toISOString() : null,
+  };
+  setItems((arr) => arr.map((it) => (it.id === item.id ? { ...it, ...payload } : it)));
+  try {
+    await patchItem(item.id, payload);
+  } catch (e) {
+    console.error(e);
+    setItems((arr) =>
+      arr.map((it) =>
+        it.id === item.id ? { ...it, status: item.status, completed_at: item.completed_at ?? null } : it
+      )
+    );
+    throw e;
+  }
 }
 
-/** ISO → "YYYY/MM/DD"（JST） */
-function isoToYmdSlashJST(iso) {
-  if (!iso) return null;
+const BUILD_TAG = "TS-v12";
+
+/** 並び順: 期限（あるもの優先・昇順）→ 重要度（降順）→ id  */
+function sortByDueAndPriority(items) {
+  const tsOrInf = (iso) => {
+    const t = iso ? new Date(iso).getTime() : NaN;
+    return Number.isFinite(t) ? t : Infinity;
+  };
+  return [...items].sort((a, b) => {
+    const ad = tsOrInf(a.due_at || (a.due_date ? `${a.due_date}T00:00:00` : null));
+    const bd = tsOrInf(b.due_at || (b.due_date ? `${b.due_date}T00:00:00` : null));
+    if (ad !== bd) return ad - bd;
+    const ap = a.priority ?? 0;
+    const bp = b.priority ?? 0;
+    if (ap !== bp) return bp - ap;
+    return (a.id || 0) - (b.id || 0);
+  });
+}
+
+/* ===== datetime-local 入出力（JST固定） ===== */
+function isoToLocalDTInputJST(iso) {
+  if (!iso) return "";
   const d = new Date(iso);
-  return new Intl.DateTimeFormat("ja-JP", {
+  const pad = (n) => String(n).padStart(2, "0");
+  const j = new Date(d.getTime() + (9 * 60 + d.getTimezoneOffset()) * 60000);
+  return `${j.getFullYear()}-${pad(j.getMonth() + 1)}-${pad(j.getDate())}T${pad(j.getHours())}:${pad(
+    j.getMinutes()
+  )}`;
+}
+function localDTInputToIsoJST(v) {
+  if (!v || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) return null;
+  return `${v}:00+09:00`;
+}
+
+/* ===== 期限（日付/時刻） ←→ ISO(JST) 変換 ===== */
+function isoToYmdJST(iso) {
+  if (!iso) return "";
+  const parts = new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  })
-    .format(d)
-    .replaceAll("-", "/"); // Safari対策（環境によっては 2025/08/31 形式で出ます）
+  }).formatToParts(new Date(iso));
+  const y = parts.find((p) => p.type === "year")?.value || "";
+  const m = parts.find((p) => p.type === "month")?.value || "";
+  const d = parts.find((p) => p.type === "day")?.value || "";
+  return `${y}-${m}-${d}`;
 }
+function isoToHmJST(iso) {
+  if (!iso) return "";
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date(iso));
+  const hh = parts.find((p) => p.type === "hour")?.value || "00";
+  const mm = parts.find((p) => p.type === "minute")?.value || "00";
+  return `${hh}:${mm}`;
+}
+function ymdHmToIsoJST(ymd, hm) {
+  if (!ymd) return null;
+  const t = hm && /^\d{2}:\d{2}$/.test(hm) ? hm : "00:00";
+  return `${ymd}T${t}:00+09:00`;
+}
+const numOrNull = (v) => (v === "" || v == null ? null : Number(v));
 
 export default function TodayStart({ onEmptyInbox }) {
   const [loading, setLoading] = useState(true);
   const [dailyReportId, setDailyReportId] = useState(null);
-  const [report, setReport] = useState(null); // { id, report_date, period_start_at, ... }
+  const [report, setReport] = useState(null);
   const [items, setItems] = useState([]);
   const [error, setError] = useState(null);
 
-  // 時刻入力はローカルに保持（更新ボタン or Enter でだけ保存）
+  // モード: normal / template / repeat
+  const [kindTab, setKindTab] = useSessionState("todo:todayStart:kindTab", "normal");
+
+  // 表示コントロール
+  const [showChecked, setShowChecked] = useSessionState("todo:todayStart:showChecked", false);
+  const [persistedTags, setPersistedTags] = useSessionState("todo:todayStart:selectedTags", []);
+  const [categoryFilter, setCategoryFilter] = useSessionState("todo:todayStart:category", null);
+  const tagFilter = useMemo(() => new Set(persistedTags), [persistedTags]);
+
+  // 時刻入力
   const [timeInput, setTimeInput] = useState(""); // "HH:mm"
   const [saving, setSaving] = useState(false);
 
-  // 画面右上に出す微小バージョン印（このファイルでビルドされているか即確認用）
-  const BUILD_TAG = "TS-v3"; // ← これが画面右上に見えれば差し替え済み
+  // 編集モーダル
+  const [editing, setEditing] = useState(null);
+  const closeModal = () => setEditing(null);
 
-  // 初期ロード
+  // クリック遅延（シングル vs ダブル）
+  const [clickTimer, setClickTimer] = useState(null);
+  const onRowClick = (it) => {
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+      setClickTimer(null);
+    }
+    const t = setTimeout(() => {
+      if (kindTab === "normal") toggleCheck(it);
+      setClickTimer(null);
+    }, 200);
+    setClickTimer(t);
+  };
+  const onRowDoubleClick = (e, it) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+      setClickTimer(null);
+    }
+    setEditing(it);
+  };
+
+  // 初期ロード & タブ切替時ロード
   useEffect(() => {
     let mounted = true;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const payload = await getDayStart();
-        const drId = payload?.daily_report_id ?? null;
-        const rows = Array.isArray(payload?.items) ? payload.items : [];
-        if (!mounted) return;
+        if (kindTab === "template") {
+          // 専用エンドポイントでテンプレ一覧
+          const rowsRaw = await listTemplates();
+          if (!mounted) return;
+          setItems(rowsRaw.map((it) => ({ ...it, tags: parseTagsCsv(it.tags_text) })));
 
-        setDailyReportId(drId);
-        setItems(
-          rows.map((it) => ({
-            ...it,
-            today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
-          }))
-        );
+          setReport(null);
+          setDailyReportId(null);
+          setTimeInput("");
+        } else {
+          // normal（既存フロー）
+          const payload = await getDayStart();
+          if (!mounted) return;
+          const drId = payload?.daily_report_id ?? null;
+          const rows = Array.isArray(payload?.items) ? payload.items : [];
+          setDailyReportId(drId);
+          setItems(
+            rows.map((it) => ({
+              ...it,
+              due_date: it.due_at ? String(it.due_at).slice(0, 10) : it.due_date ?? null,
+              tags: parseTagsCsv(it.tags_text),
+              today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
+            }))
+          );
 
-        if (drId) {
-          try {
-            const rep = await getReport(drId);
-            if (mounted) {
-              setReport(rep);
-              setTimeInput(hhmmFromISOJST(rep?.period_start_at) || "");
+          if (drId) {
+            try {
+              const rep = await getReport(drId);
+              if (mounted) {
+                setReport(rep);
+                setTimeInput(hhmmFromISOJST(rep?.period_start_at) || "");
+              }
+            } catch (e) {
+              console.warn(e);
             }
-          } catch {}
+          }
+          if (rows.length === 0 && onEmptyInbox) onEmptyInbox();
         }
-
-        if (rows.length === 0 && onEmptyInbox) onEmptyInbox();
-      } catch {
-        if (mounted) setError("認証エラーまたは読み込みに失敗しました。ログイン状態をご確認ください。");
+      } catch (e) {
+        console.error(e);
+        if (mounted) setError("読み込みに失敗しました。");
       } finally {
         if (mounted) setLoading(false);
       }
@@ -115,49 +239,35 @@ export default function TodayStart({ onEmptyInbox }) {
     return () => {
       mounted = false;
     };
-  }, [onEmptyInbox]);
-
-  const selectedCount = useMemo(
-    () => items.filter((i) => i.daily_report_id === dailyReportId).length,
-    [items, dailyReportId]
-  );
-
-  const overdueIds = useMemo(() => {
-    const now = Date.now();
-    return new Set(
-      items.filter((i) => i.due_at && new Date(i.due_at).getTime() < now).map((i) => i.id)
-    );
-  }, [items]);
+  }, [kindTab, onEmptyInbox]);
 
   // ===== 日付表示（JST） =====
-  // 第一優先: report_date(YYYY-MM-DD) を "YYYY/MM/DD"
-  // 代替: period_start_at(ISO) から JST日付を生成
   const jstDateStr = useMemo(() => {
+    if (kindTab !== "normal") return "—";
     const byReportDate = ymdSlash(report?.report_date);
     if (byReportDate) return byReportDate;
     const byStartIso = isoToYmdSlashJST(report?.period_start_at);
     return byStartIso || "—";
-  }, [report?.report_date, report?.period_start_at]);
+  }, [kindTab, report?.report_date, report?.period_start_at]);
 
-  // 入力値と現在値の差分
+  // 入力との比較
   const dirty = useMemo(() => {
+    if (kindTab !== "normal") return false;
     const base = report ? hhmmFromISOJST(report.period_start_at) : "";
     return timeInput !== base;
-  }, [timeInput, report]);
+  }, [kindTab, timeInput, report]);
 
-  // ===== 保存（更新ボタン or Enter） =====
+  // ===== 開始時刻保存 =====
   const saveStartTime = useCallback(async () => {
+    if (kindTab !== "normal") return;
     if (!dailyReportId) return;
     if (!/^\d{2}:\d{2}$/.test(timeInput)) return;
 
-    // 保存用ISO（JST固定）
     const ymd = report?.report_date;
-    // report_date が無い場合は period_start_at のJST日付を使う
     const datePart =
       ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)
         ? ymd
-        : (isoToYmdSlashJST(report?.period_start_at) || "")
-            ?.replaceAll("/", "-"); // "YYYY/MM/DD" → "YYYY-MM-DD"
+        : (isoToYmdSlashJST(report?.period_start_at) || "").replaceAll("/", "-");
 
     if (!datePart) return;
 
@@ -168,7 +278,6 @@ export default function TodayStart({ onEmptyInbox }) {
     setReport((r) => (r ? { ...r, period_start_at: iso } : r));
     try {
       await patchReport(dailyReportId, { period_start_at: iso });
-      // ページ遷移なし
     } catch (err) {
       console.error(err);
       setReport(prev);
@@ -176,18 +285,64 @@ export default function TodayStart({ onEmptyInbox }) {
     } finally {
       setSaving(false);
     }
-  }, [dailyReportId, timeInput, report]);
+  }, [kindTab, dailyReportId, timeInput, report]);
 
   const onKeyDownTime = useCallback(
     (e) => {
       if (e.key === "Enter") {
-        e.preventDefault(); // 暗黙のフォーム送信を抑止
+        e.preventDefault();
         e.stopPropagation();
         saveStartTime();
       }
     },
     [saveStartTime]
   );
+
+  // 新規テンプレ作成用に編集モーダル
+  function onCreateTemplate() {
+    // まだDB未登録の「新規テンプレ候補」を作って編集モーダルを開く
+    const draft = {
+      id: null,                // ← これで「新規」を判定
+      title: "新規テンプレート",
+      priority: 3,
+      todo_flag: false,
+      kind: "TEMPLATE",
+      unit: "分",              // ★ 初期値
+      // 以下、編集モーダル初期値用に空を明示
+      due_at: null,
+      plan_start_at: null,
+      plan_end_at: null,
+      category: "",
+      tags: [],
+      description: "",
+      target_amount: "",
+      remaining_amount: "",
+    };
+    setEditing(draft);
+  }
+
+  // 新規 normal 作成用（DB未登録のドラフトを開く）
+  function onCreateNormal() {
+    const draft = {
+      id: null,              // 新規判定
+      title: "新規アイテム",
+      priority: 3,
+      todo_flag: false,
+      kind: "NORMAL",
+      unit: "分",            // 初期値は必要なら空でもOK（テンプレと合わせて「分」に）
+      // 編集モーダル用の初期値
+      due_at: null,
+      plan_start_at: null,
+      plan_end_at: null,
+      category: "",
+      tags: [],
+      description: "",
+      target_amount: "",
+      remaining_amount: "",
+    };
+    setEditing(draft);
+  }
+
 
   // ===== items の更新系 =====
   async function patchItemDailyReport(itemId, nextDrId) {
@@ -209,6 +364,8 @@ export default function TodayStart({ onEmptyInbox }) {
         setItems(
           rows.map((it) => ({
             ...it,
+            due_date: it.due_at ? String(it.due_at).slice(0, 10) : it.due_date ?? null,
+            tags: parseTagsCsv(it.tags_text),
             today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
           }))
         );
@@ -216,28 +373,8 @@ export default function TodayStart({ onEmptyInbox }) {
       setError("一部の更新に失敗しました。もう一度お試しください。");
     }
   }
-
-  async function bulkApply(toEnableIds, toDisableIds) {
-    const tasks = [];
-    toEnableIds.forEach((id) => {
-      const cur = items.find((i) => i.id === id);
-      if (cur && cur.daily_report_id !== dailyReportId) {
-        tasks.push(patchItemDailyReport(id, dailyReportId));
-      }
-    });
-    toDisableIds.forEach((id) => {
-      const cur = items.find((i) => i.id === id);
-      if (cur && cur.daily_report_id === dailyReportId) {
-        tasks.push(patchItemDailyReport(id, null));
-      }
-    });
-    if (tasks.length === 0) return;
-    try {
-      await Promise.all(tasks);
-    } catch {}
-  }
-
   async function toggleCheck(item) {
+    if (kindTab !== "normal") return;
     if (dailyReportId == null) return;
     const checked = item.daily_report_id === dailyReportId;
     try {
@@ -246,39 +383,237 @@ export default function TodayStart({ onEmptyInbox }) {
       setError("更新に失敗しました。");
     }
   }
-
-  async function autoPick() {
-    if (dailyReportId == null) return;
-    const sorted = [...items].sort(byDueAndPriority);
-    const wantOn = new Set(sorted.slice(0, 10).map((i) => i.id));
-    const toEnable = [];
-    const toDisable = [];
-    items.forEach((i) => {
-      const isOn = i.daily_report_id === dailyReportId;
-      if (wantOn.has(i.id) && !isOn) toEnable.push(i.id);
-      if (!wantOn.has(i.id) && isOn) toDisable.push(i.id);
-    });
-    await bulkApply(toEnable, toDisable);
-  }
-
-  async function selectAll() {
-    if (dailyReportId == null) return;
-    const toEnable = items.filter((i) => i.daily_report_id !== dailyReportId).map((i) => i.id);
-    await bulkApply(toEnable, []);
-  }
   async function clearAll() {
+    if (kindTab !== "normal") return;
     if (dailyReportId == null) return;
     const toDisable = items.filter((i) => i.daily_report_id === dailyReportId).map((i) => i.id);
-    await bulkApply([], toDisable);
+    if (toDisable.length === 0) return;
+    await Promise.all(toDisable.map((id) => patchItemDailyReport(id, null)));
+  }
+  async function removeItem(id) {
+    if (!window.confirm("このアイテムを削除します。よろしいですか？")) return;
+    try {
+      await fetchJson(`/api/todo/items/${id}`, { method: "DELETE" });
+      setItems((arr) => arr.filter((x) => x.id !== id));
+    } catch (e) {
+      console.error(e);
+      setError("削除に失敗しました。");
+    }
+  }
+
+  // ===== template 用操作 =====
+  async function addFromTemplate(tplId) {
+    try {
+      await addTemplateToToday(tplId);
+      // normal に切り替えて今日リストを再取得（好みでテンプレートのままでもOK）
+      setKindTab("normal");
+      const payload = await getDayStart();
+      const drId = payload?.daily_report_id ?? null;
+      const rows = Array.isArray(payload?.items) ? payload.items : [];
+      setDailyReportId(drId);
+      setItems(rows.map((it) => ({
+        ...it,
+        due_date: it.due_at ? String(it.due_at).slice(0,10) : it.due_date ?? null,
+        tags: parseTagsCsv(it.tags_text),
+        today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
+      })));
+    } catch (e) {
+      console.error(e);
+      setError("テンプレートからの追加に失敗しました。");
+    }
+  }
+
+  // ===== フィルタ・並び替え =====
+  const visibleForFilter = useMemo(() => {
+    if (kindTab === "template") return items;
+    return items.filter((it) => showChecked || it.daily_report_id !== dailyReportId);
+  }, [items, showChecked, dailyReportId, kindTab]);
+
+  const tagCounts = useMemo(() => {
+    const m = new Map();
+    for (const it of visibleForFilter) for (const t of it.tags || []) {
+      m.set(t, (m.get(t) || 0) + 1);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [visibleForFilter]);
+
+  const categoryCounts = useMemo(() => {
+    const m = new Map();
+    for (const it of visibleForFilter) {
+      if (it.category) m.set(it.category, (m.get(it.category) || 0) + 1);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [visibleForFilter]);
+
+  const onToggleTag = (t) => {
+    setPersistedTags((arr) => {
+      const set = new Set(arr || []);
+      set.has(t) ? set.delete(t) : set.add(t);
+      return Array.from(set);
+    });
+  };
+  const onSelectCategory = (cOrNull) => setCategoryFilter(cOrNull);
+  const onClearFilters = () => {
+    setPersistedTags([]);
+    setCategoryFilter(null);
+  };
+
+  const filtered = useMemo(() => {
+    return items.filter((it) => {
+      if (kindTab === "normal") {
+        if (!showChecked && it.daily_report_id === dailyReportId) return false;
+      }
+      if (categoryFilter && it.category !== categoryFilter) return false;
+      if (tagFilter.size > 0) {
+        const tags = new Set(it.tags || []);
+        for (const t of tagFilter) if (!tags.has(t)) return false;
+      }
+      return true;
+    });
+  }, [items, kindTab, showChecked, dailyReportId, categoryFilter, tagFilter]);
+
+  const sorted = useMemo(() => {
+    return kindTab === "template"
+      ? [...filtered].sort((a, b) => (a.title || "").localeCompare(b.title || ""))
+      : sortByDueAndPriority(filtered);
+  }, [filtered, kindTab]);
+
+  const selectedCount = useMemo(
+    () =>
+      kindTab === "normal"
+        ? items.filter((i) => i.daily_report_id === dailyReportId).length
+        : 0,
+    [items, dailyReportId, kindTab]
+  );
+
+  // ===== 編集保存 =====
+ async function saveEdit(values) {
+   try {
+     // ★ // ★ 新規テンプレート作成（id が null/undefined かつ kind=TEMPLATE）
+     if (values.id == null && (values.kind === "TEMPLATE" || kindTab === "template")) {
+       const created = await createTemplate({
+         title: values.title,
+         description: values.description ?? null,
+         priority: values.priority,
+         // 期限
+         due_at: values.no_due ? null : (values.due_at || null),
+         // 予定
+         plan_start_at: values.plan_start_at || null,
+         plan_end_at: values.plan_end_at || null,
+         // メタ
+         category: values.category ?? null,
+         unit: values.unit || "分",
+         target_amount: numOrNull(values.target_amount),
+         remaining_amount: numOrNull(values.remaining_amount),
+         todo_flag: !!values.todo_flag,
+         // バックエンドは tags_text で受けるので渡す
+         tags_text: (values.tags || []).join(","),
+       });
+       // リスト先頭に追加して閉じる
+       setItems((arr) => [created, ...arr]);
+       closeModal();
+       return;
+     }
+    // ★ 新規 normal 作成（id が null/undefined かつ normal タブ）
+    if (values.id == null && (values.kind === "NORMAL" || kindTab === "normal")) {
+      const created = await createItem({
+        title: values.title,
+        description: values.description ?? null,
+        priority: values.priority,
+        // 締切・予定
+        due_at: values.no_due ? null : (values.due_at || null),
+        plan_start_at: values.plan_start_at || null,
+        plan_end_at: values.plan_end_at || null,
+        // メタ
+        category: values.category ?? null,
+        unit: values.unit || null,
+        target_amount: numOrNull(values.target_amount),
+        remaining_amount: numOrNull(values.remaining_amount),
+        tags_text: (values.tags || []).join(","),
+        // kind と TODO型
+        kind: "NORMAL",
+        todo_flag: !!values.todo_flag,
+        // 今日の開始から作るので今日に入れる
+        pin_today: true,                   // ← backend の POST /items で today_flag 初期化に使用
+        daily_report_id: dailyReportId ?? null,
+      });
+      // 画面に即反映（checked 扱いにする）
+      setItems((arr) => [
+        {
+          ...created,
+          tags: parseTagsCsv(created.tags_text),
+          today_flag: true,
+          daily_report_id: dailyReportId ?? null,
+        },
+        ...arr,
+      ]);
+      closeModal();
+      return;
+    }
+
+     // 既存テンプレ or normal の更新（従来通り）
+     await patchItem(values.id, {
+        title: values.title,
+        due_at: values.no_due ? null : values.due_at || null,
+        priority: values.priority,
+        category: values.category ?? null,
+        tags_text: (values.tags || []).join(","),
+        description: values.description ?? null,
+        todo_flag: !!values.todo_flag,
+        plan_start_at: values.plan_start_at || null,
+        plan_end_at: values.plan_end_at || null,
+        target_amount: numOrNull(values.target_amount),
+        remaining_amount: numOrNull(values.remaining_amount),
+        unit: (values.unit || "分"), // 単位が空なら「分」
+      });
+
+      setItems((arr) =>
+        arr.map((x) =>
+          x.id === values.id
+            ? {
+                ...x,
+                title: values.title,
+                due_at: values.no_due ? null : values.due_at || null,
+                priority: values.priority,
+                category: values.category ?? null,
+                tags_text: (values.tags || []).join(","),
+                tags: values.tags || [],
+                description: values.description ?? null,
+                todo_flag: !!values.todo_flag,
+                plan_start_at: values.plan_start_at || null,
+                plan_end_at: values.plan_end_at || null,
+                target_amount: numOrNull(values.target_amount),
+                remaining_amount: numOrNull(values.remaining_amount),
+                unit: values.unit || "分",
+              }
+            : x
+        )
+      );
+      closeModal();
+    } catch (e) {
+      console.error(e);
+      setError("保存に失敗しました。");
+    }
   }
 
   if (loading) return <div className="p-4">読み込み中…</div>;
-  if (items.length === 0)
+
+  if (kindTab === "normal" && items.length === 0)
     return (
       <div className="text-sm text-gray-500 border rounded p-3">
         INBOX が空です。新しいタスクを「追加」から登録してください。
       </div>
     );
+
+  // アクティブタブを塗りつぶしで強調
+  const tabBtnClass = (k) =>
+    "px-3 py-1 rounded-full border text-sm transition-colors " +
+    (kindTab === k ? "bg-black text-white border-black font-semibold"
+                   : "bg-white text-gray-900");
+
+  const chipClass = (active) =>
+    "px-2 py-1 rounded-full border text-sm shrink-0 transition-colors " +
+    (active ? "bg-background" : "bg-muted text-muted-foreground");
 
   return (
     <div className="p-4 space-y-3">
@@ -289,70 +624,561 @@ export default function TodayStart({ onEmptyInbox }) {
 
       {error && <div className="bg-red-100 text-red-700 p-2 rounded">{error}</div>}
 
-      {/* 日付（JST）と開始時刻（手動保存） */}
-      <div className="flex flex-wrap items-center gap-3 p-3 border rounded">
-        <div className="text-sm text-gray-600">
-          日付：<span className="font-medium">{jstDateStr}</span>
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <span className="font-medium">開始時刻</span>
-          <input
-            type="time"
-            value={timeInput}
-            onChange={(e) => setTimeInput(e.target.value)}
-            onKeyDown={onKeyDownTime}
-            className="rounded border px-2 py-1"
-          />
-        </label>
-        <button
-          className="px-3 py-1 rounded border"
-          disabled={!dirty || saving}
-          onClick={saveStartTime}
-        >
-          {saving ? "保存中…" : "更新"}
-        </button>
-        <div className="text-xs text-gray-500">
-          （更新ボタン または Enter で保存／ページ遷移しません）
-        </div>
-      </div>
-
+      {/* タブ */}
       <div className="flex gap-2">
-        <button className="px-3 py-1 rounded border" onClick={autoPick}>
-          自動選択
-        </button>
-        <button className="px-3 py-1 rounded border" onClick={selectAll}>
-          全選択
-        </button>
-        <button className="px-3 py-1 rounded border" onClick={clearAll}>
-          選択解除
-        </button>
-        <div className="ml-auto text-sm text-gray-500 self-center">選択 {selectedCount} 件</div>
+        {["normal", "template", "repeat"].map((k) => (
+          <button
+            key={k}
+            type="button"
+            className={tabBtnClass(k)}
+            onClick={() => setKindTab(k)}
+          >
+            {k === "normal" ? "normal" : k === "template" ? "テンプレート" : "繰り返し項目"}
+          </button>
+        ))}
+        {kindTab === "normal" && (
+          <div className="ml-auto text-sm text-gray-500 self-center">選択 {selectedCount} 件</div>
+        )}
       </div>
 
+      {/* テンプレートヘッダ操作 */}
+      {kindTab === "template" && (
+        <div className="flex justify-end">
+          <button
+            className="px-3 py-1 rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+            onClick={onCreateTemplate}
+          >
+            新規
+          </button>
+        </div>
+      )}
+      {kindTab === "normal" && (
+        <div className="flex justify-end">
+          <button
+            className="px-3 py-1 rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+            onClick={onCreateNormal}
+          >
+            新規
+          </button>
+        </div>
+      )}
+
+      {/* normal モードのヘッダ（開始時刻+チェック済み表示） */}
+      {kindTab === "normal" && (
+        <div className="flex flex-wrap items-center gap-3 p-3 border rounded">
+          <div className="text-sm text-gray-600">
+            日付：<span className="font-medium">{jstDateStr}</span>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="font-medium">開始時刻</span>
+            <input
+              type="time"
+              value={timeInput}
+              onChange={(e) => setTimeInput(e.target.value)}
+              onKeyDown={onKeyDownTime}
+              className="rounded border px-2 py-1"
+            />
+          </label>
+          <button className="px-3 py-1 rounded border" disabled={!dirty || saving} onClick={saveStartTime}>
+            {saving ? "保存中…" : "更新"}
+          </button>
+
+          <label className="ml-auto flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="checkbox"
+              checked={!!showChecked}
+              onChange={(e) => setShowChecked(e.target.checked)}
+            />
+            <span>チェック済みを表示</span>
+          </label>
+        </div>
+      )}
+
+      {/* インライン・フィルタ */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        {tagCounts.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-muted-foreground">タグ:</span>
+            {tagCounts.map(([t, cnt]) => (
+              <button key={t} type="button" onClick={() => onToggleTag(t)} className={chipClass(tagFilter.has(t))}>
+                #{t} <span className="opacity-60">({cnt})</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {categoryCounts.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-muted-foreground">カテゴリ:</span>
+            {categoryCounts.map(([c, cnt]) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => onSelectCategory(categoryFilter === c ? null : c)}
+                className={chipClass(categoryFilter === c)}
+              >
+                {c} <span className="opacity-60">({cnt})</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {(tagCounts.length > 0 || categoryCounts.length > 0) &&
+          (persistedTags.length > 0 || categoryFilter) && (
+            <button className="ml-auto text-xs text-blue-600 underline hover:no-underline" onClick={onClearFilters}>
+              クリア
+            </button>
+          )}
+      </div>
+
+      {/* 操作バー（normalのみ） */}
+      {kindTab === "normal" && (
+        <div className="flex gap-2">
+          <button className="px-3 py-1 rounded border" onClick={clearAll}>
+            選択解除
+          </button>
+        </div>
+      )}
+
+      {/* 本体リスト */}
       <ul className="divide-y border rounded">
-        {items.map((i) => {
-          const checked = i.daily_report_id === dailyReportId;
-          const overdue = overdueIds.has(i.id);
+        {sorted.map((i) => {
+          const checked = kindTab === "normal" ? i.daily_report_id === dailyReportId : false;
+          const overdue = isOverdue(i);
+          const isDone = String(i.status || "").toUpperCase() === "DONE";
+          const todoKind = isTodoKind(i);
+
           return (
-            <li key={i.id} className="p-3 flex items-center gap-3">
-              <input type="checkbox" checked={checked} onChange={() => toggleCheck(i)} />
-              <div className="flex-1">
-                <div className="font-medium">
-                  {i.title}
-                  {overdue && <span className="ml-2 text-xs text-red-600">期限超過</span>}
+            <li
+              key={i.id}
+              className="p-3 flex items-center gap-3 cursor-pointer hover:bg-muted/30"
+              onClick={() => onRowClick(i)}
+              onDoubleClick={(e) => onRowDoubleClick(e, i)}
+            >
+              {kindTab === "normal" && (
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleCheck(i)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="今日に入れる"
+                  title="今日に入れる"
+                />
+              )}
+
+              <div className={`flex-1 min-w-0 ${todoKind && isDone ? "opacity-60 line-through" : ""}`}>
+                <div className="font-medium flex items-center gap-2">
+                  <span className="truncate">{i.title}</span>
+                  {i.priority && <span className="text-yellow-500">{"★".repeat(i.priority)}</span>}
+                  {overdue && <span className="ml-1 text-xs text-white bg-red-600 rounded px-1.5 py-0.5">期限超過</span>}
+                  {todoKind && <span className="ml-1 text-[10px] text-white bg-slate-500 rounded px-1 py-0.5">TODO</span>}
                 </div>
-                <div className="text-xs text-gray-500">
-                  期日: {i.due_at ? new Date(i.due_at).toLocaleString() : "—"}／
-                  優先度: {String(i.priority ?? "—")}
+
+                <div className="text-xs text-gray-500 flex flex-wrap items-center gap-2 mt-1">
+                  {(i.due_at || i.due_date) && (
+                    <span className="text-muted-foreground">
+                      {i.due_at ? `期限: ${fmtLocal(i.due_at)}` : `期限: ${i.due_date} 00:00`}
+                    </span>
+                  )}
+                  {i.category && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCategoryFilter(categoryFilter === i.category ? null : i.category);
+                      }}
+                      className={chipClass(categoryFilter === i.category)}
+                    >
+                      {i.category}
+                    </button>
+                  )}
+                  {(i.tags || []).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleTag(t);
+                      }}
+                      className={chipClass(tagFilter.has(t))}
+                    >
+                      #{t}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="text-xs text-gray-600">
-                {i.status} {i.today_flag ? "(今日)" : ""}
+
+              <div className="flex items-center gap-2">
+                {kindTab === "template" ? (
+                  <>
+                    <button
+                      className="px-3 py-1 text-xs rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addFromTemplate(i.id);
+                      }}
+                    >
+                      今日に追加
+                    </button>
+                    {/* 編集（鉛筆）も表示：normal と同じUI */}
+                    <button
+                      className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditing(i);
+                      }}
+                      title="編集"
+                      aria-label="編集"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 inline-block align-[-2px]" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13.586 3a2 2 0 0 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zM12.379 5.207 3 14.586V18h3.414l9.379-9.379-3.414-3.414z"/>
+                      </svg>
+                      <span className="ml-1 hidden sm:inline">編集</span>
+                    </button>
+                    <button
+                      className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeItem(i.id);
+                      }}
+                    >
+                      削除
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {isTodoKind(i) && (
+                      <label
+                        className="inline-flex items-center gap-1 text-xs select-none"
+                        onClick={(e) => e.stopPropagation()}
+                        title="完了（TODO型）"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isDone}
+                          onChange={async (e) => {
+                            try {
+                              await toggleDoneTodoKind(i, e.target.checked, setItems);
+                            } catch {
+                              setError("完了状態の更新に失敗しました。");
+                            }
+                          }}
+                        />
+                        <span>完了</span>
+                      </label>
+                    )}
+                    <button
+                      className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditing(i);
+                      }}
+                    >
+                      編集
+                    </button>
+                    <button
+                      className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeItem(i.id);
+                      }}
+                    >
+                      削除
+                    </button>
+                  </>
+                )}
               </div>
             </li>
           );
         })}
       </ul>
+
+      {editing && <EditModal item={editing} onCancel={closeModal} onSave={saveEdit} />}
     </div>
   );
+}
+
+/* ====== 編集モーダル ====== */
+function EditModal({ item, onCancel, onSave }) {
+  const [title, setTitle] = useState(item.title || "");
+  const [priority, setPriority] = useState(item.priority ?? 3);
+  const [category, setCategory] = useState(item.category ?? "");
+  const [tags, setTags] = useState(item.tags || []);
+  const [description, setDescription] = useState(item.description ?? "");
+
+  const kindStr = item?.kind ? String(item.kind).toUpperCase() : "";
+  const [todoFlag, setTodoFlag] = useState(Boolean(item?.todo_flag));
+
+  // 期限
+  const [dueDate, setDueDate] = useState(isoToYmdJST(item?.due_at));
+  const [dueTime, setDueTime] = useState(isoToHmJST(item?.due_at));
+  const [noDue, setNoDue] = useState(!item?.due_at);
+
+  // 予定開始/終了
+  const [noStart, setNoStart] = useState(!item?.plan_start_at);
+  const [noEnd, setNoEnd] = useState(!item?.plan_end_at);
+  const [planStartLocal, setPlanStartLocal] = useState(isoToLocalDTInputJST(item?.plan_start_at));
+  const [planEndLocal, setPlanEndLocal] = useState(isoToLocalDTInputJST(item?.plan_end_at));
+
+  // 予定量 / 残量 / 単位
+  const [targetAmount, setTargetAmount] = useState(item?.target_amount ?? "");
+  const [remainingAmount, setRemainingAmount] = useState(item?.remaining_amount ?? "");
+  const [unit, setUnit] = useState(item?.unit ?? "");
+
+  const [tagInput, setTagInput] = useState("");
+  const addTag = () => {
+    const t = tagInput.trim();
+    if (!t) return;
+    setTags((arr) => (arr.includes(t) ? arr : [...arr, t]));
+    setTagInput("");
+  };
+  const removeTag = (t) => setTags((arr) => arr.filter((x) => x !== t));
+
+  const setMidnight = () => {
+    setNoDue(false);
+    setDueTime("00:00");
+  };
+  const setDayEnd = () => {
+    setNoDue(false);
+    setDueTime("23:59");
+  };
+  const clearTime = () => setDueTime("");
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-xl w-[min(760px,94vw)] p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold">アイテムを編集</h3>
+          {kindStr && (
+            <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full border bg-muted text-muted-foreground">
+              kind: {kindStr}
+            </span>
+          )}
+          {todoFlag && <span className="text-[10px] px-2 py-0.5 rounded bg-slate-600 text-white">TODO</span>}
+        </div>
+
+        <label className="flex items-center gap-2 text-sm border rounded p-2">
+          <input type="checkbox" checked={todoFlag} onChange={(e) => setTodoFlag(e.target.checked)} />
+          <span>TODO型（開始ボタンなし・チェックで完了）</span>
+        </label>
+
+        <label className="block text-sm">
+          <span className="text-gray-600">タイトル</span>
+          <input className="mt-1 w-full rounded border px-2 py-1" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </label>
+
+        {/* 期限 */}
+        <div className="grid grid-cols-[1fr_120px_auto_auto_auto] gap-2 items-end">
+          <label className="block text-sm">
+            <span className="text-gray-600">期限（日付）</span>
+            <input
+              type="date"
+              className="mt-1 w-full rounded border px-2 py-1"
+              disabled={noDue}
+              value={noDue ? "" : dueDate || ""}
+              onChange={(e) => {
+                setNoDue(false);
+                setDueDate(e.target.value);
+              }}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-600">時刻</span>
+            <input
+              type="time"
+              className="mt-1 w-full rounded border px-2 py-1"
+              disabled={noDue}
+              value={noDue ? "" : dueTime || ""}
+              onChange={(e) => {
+                setNoDue(false);
+                setDueTime(e.target.value);
+              }}
+            />
+          </label>
+          <button type="button" className="h-9 px-3 rounded border text-sm" disabled={noDue} onClick={setMidnight}>
+            0:00
+          </button>
+          <button type="button" className="h-9 px-3 rounded border text-sm" disabled={noDue} onClick={setDayEnd}>
+            23:59
+          </button>
+          <button type="button" className="h-9 px-3 rounded border text-sm" disabled={noDue} onClick={clearTime}>
+            ×
+          </button>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={noDue} onChange={(e) => setNoDue(e.target.checked)} />
+          <span>期限なし</span>
+        </label>
+
+        {/* 優先度 */}
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm">
+            <span className="text-gray-600">優先度(1..5)</span>
+            <input
+              type="number"
+              min={1}
+              max={5}
+              className="mt-1 w-full rounded border px-2 py-1"
+              value={priority}
+              onChange={(e) => setPriority(Math.min(5, Math.max(1, Number(e.target.value) || 3)))}
+            />
+          </label>
+          <div />
+        </div>
+
+        {/* 予定開始/終了 */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="text-sm">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={noStart} onChange={(e) => setNoStart(e.target.checked)} />
+              <span className="text-gray-600">開始なし</span>
+            </label>
+            <input
+              type="datetime-local"
+              disabled={noStart}
+              className="mt-1 w-full rounded border px-2 py-1"
+              value={noStart ? "" : planStartLocal}
+              onChange={(e) => setPlanStartLocal(e.target.value)}
+            />
+          </div>
+          <div className="text-sm">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={noEnd} onChange={(e) => setNoEnd(e.target.checked)} />
+              <span className="text-gray-600">終了なし</span>
+            </label>
+            <input
+              type="datetime-local"
+              disabled={noEnd}
+              className="mt-1 w-full rounded border px-2 py-1"
+              value={noEnd ? "" : planEndLocal}
+              onChange={(e) => setPlanEndLocal(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* カテゴリ / タグ */}
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm">
+            <span className="text-gray-600">カテゴリ</span>
+            <input className="mt-1 w-full rounded border px-2 py-1" value={category} onChange={(e) => setCategory(e.target.value)} />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-600">タグ</span>
+            <div className="mt-1 flex gap-2">
+              <input
+                className="flex-1 rounded border px-2 py-1"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTag();
+                  }
+                }}
+                placeholder="タグを入力してEnter"
+              />
+              <button className="px-2 py-1 rounded border" onClick={addTag}>
+                追加
+              </button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {tags.map((t) => (
+                <span key={t} className="px-2 py-0.5 rounded-full border text-sm">
+                  #{t}
+                  <button className="ml-1 text-xs text-red-600" onClick={() => removeTag(t)}>
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </label>
+        </div>
+
+        {/* 予定量 / 残量 / 単位 */}
+        <div className="grid grid-cols-3 gap-3">
+          <label className="block text-sm">
+            <span className="text-gray-600">予定量</span>
+            <input
+              type="number"
+              step="any"
+              className="mt-1 w-full rounded border px-2 py-1"
+              placeholder="例) 30"
+              value={targetAmount}
+              onChange={(e) => setTargetAmount(e.target.value)}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-600">残量</span>
+            <input
+              type="number"
+              step="any"
+              className="mt-1 w-full rounded border px-2 py-1"
+              placeholder="例) 10"
+              value={remainingAmount}
+              onChange={(e) => setRemainingAmount(e.target.value)}
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-600">単位</span>
+            <input
+              className="mt-1 w-full rounded border px-2 py-1"
+              placeholder="例) 分 / 件 / 冊"
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+            />
+          </label>
+        </div>
+
+        {/* 説明 */}
+        <label className="block text-sm">
+          <span className="text-gray-600">説明</span>
+          <textarea className="mt-1 w-full rounded border px-2 py-1 min-h-[120px]" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+
+        <div className="flex gap-2 justify-end pt-2">
+          <button className="px-3 py-1 rounded border" onClick={onCancel}>
+            キャンセル
+          </button>
+          <button
+            className="px-3 py-1 rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+            onClick={() =>
+              onSave({
+                id: item.id,
+                title,
+                priority,
+                category: category || null,
+                tags,
+                description,
+                todo_flag: !!todoFlag,
+
+                // 期限
+                no_due: !!noDue,
+                due_at: noDue ? null : ymdHmToIsoJST(dueDate, dueTime),
+
+                // 予定開始/終了
+                plan_start_at: noStart ? null : localDTInputToIsoJST(planStartLocal),
+                plan_end_at: noEnd ? null : localDTInputToIsoJST(planEndLocal),
+
+                // 予定量/残量/単位
+                target_amount: targetAmount,
+                remaining_amount: remainingAmount,
+                unit: unit || null,
+              })
+            }
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- 小物 ---------- */
+function fmtLocal(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

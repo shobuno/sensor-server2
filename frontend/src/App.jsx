@@ -20,6 +20,8 @@ import TopBar from './components/TopBar';
 // ✅ Todo
 import TodoPage from '@todo/pages/TodoPage.jsx';
 import TodoDailyReport from '@todo/pages/TodoDailyReport.jsx';
+import TemplatesList from '@todo/pages/TemplatesList.jsx';
+import TodoAdd from '@todo/pages/TodoAdd.jsx';
 
 function TodoLayout() {
   return (
@@ -86,6 +88,8 @@ export default function App() {
       >
         <Route index element={<TodoPage />} />
         <Route path="daily-report" element={<TodoDailyReport />} />
+        <Route path="templates" element={<TemplatesList />} />
+        <Route path="add" element={<TodoAdd />} />
         {/* 必要になったらサブルートを追加:
         <Route path="close" element={<TodayCloseView />} />
         <Route path="add"   element={<TodoAdd />} />

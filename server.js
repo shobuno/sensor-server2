@@ -75,6 +75,10 @@ app.use('/automesh/api', requireAuth(), autoMeshApp);
 const todoApp = require('./apps/todo/backend/app');
 app.use('/api/todo', requireAuth(['todo_admin','todo_user','admin']), todoApp);
 
+// ★ Templates も同じ保護・同じプレフィックスに
+const templatesRouter = require('./apps/todo/backend/routes/templates');
+app.use('/api/todo/templates', requireAuth(['todo_admin','todo_user','admin']), templatesRouter);
+
 // HydroSense API
 // ⚠️ 重要：Hydro 側の routes/index.js は内部で '/hydro/...' を付けています。
 // そのため、ここは '/api' にマウントします（以前の '/api/hydro' だと二重になり 404/ぶら下がりの原因）。
@@ -89,8 +93,6 @@ app.use('/api/ec-graph', (req, res, next) => {
   });
   next();
 }, requireAuth(), ecGraph);
-
-app.use('/api/ec-graph', requireAuth(), ecGraph);
 
 
 // 疎通テスト用（任意）：保護なしで生存確認できる軽いエンドポイント

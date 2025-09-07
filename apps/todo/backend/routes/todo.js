@@ -1,4 +1,4 @@
-// sensor-server/apps/todo/backend/routes/todo.js
+// server2/apps/todo/backend/routes/todo.js
 const express = require('express');
 const router = express.Router();
 const db = require('../../../../backend/config/db');
@@ -22,7 +22,7 @@ function getUserId(req) {
   return req?.user?.id || req?.user?.id_uuid;
 }
 
-// 配列/文字列どちらで来てもCSVに整える
+// 配列/文字列どちらで来てもCSVに整える（DBは tags_text に保存）
 function normalizeTagsCsv(body) {
   const { tags, tags_text } = body || {};
   if (typeof tags_text === 'string' && tags_text.trim() !== '') return tags_text.trim();
@@ -65,7 +65,10 @@ router.get('/items/:id', async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, title, description, status, today_flag, priority, due_at, category,
             unit, target_amount, remaining_amount, tags_text,
-            plan_start_at, plan_end_at, daily_report_id, created_at, updated_at
+            plan_start_at, plan_end_at, planned_minutes, sort_order,
+            started_at, completed_at, daily_report_id, favorite, note,
+            kind, todo_flag,
+            created_at, updated_at
        FROM todo.items
       WHERE user_id = $1 AND id = $2`,
     [userId, req.params.id]
@@ -78,7 +81,7 @@ router.get('/items/:id', async (req, res) => {
 
 /** GET /items?bucket=today|someday&status=...&today=1 */
 router.get('/items', async (req, res) => {
-  let { bucket, status, scope, today } = req.query;
+  let { bucket, status, scope, today, item_type, kind } = req.query;
   if (!bucket && scope) bucket = scope;
 
   const userId = getUserId(req);
@@ -87,8 +90,36 @@ router.get('/items', async (req, res) => {
   const params = [userId];
   const where = [`i.user_id = $1`];
 
+  // --- kind / item_type フィルタ（normal | template | repeat_rule） ---
+  // 互換のため kind=normal|template|repeat でも受ける
+  const rawKind = (item_type || kind || '').toString().toLowerCase();
+  const kindMap = {
+    normal: 'NORMAL',
+    template: 'TEMPLATE',
+    repeat_rule: 'REPEAT_RULE',
+    repeat: 'REPEAT_RULE',
+  };
+  if (rawKind && kindMap[rawKind]) {
+    params.push(kindMap[rawKind]);
+    where.push(`i.kind = $${params.length}::todo.item_kind`);
+  }
+
   if (today === '1' || today === 'true') {
-    where.push(`(i.today_flag = true OR i.status = 'DOING'::todo.item_status)`);
+    // today_flag=true かつ「JST今日の daily_report」に紐づくレコードのみ表示
+    // （DOING は今日扱いで常に表示）
+    where.push(`(
+      (
+        i.today_flag = TRUE
+        AND EXISTS (
+          SELECT 1
+            FROM todo.daily_reports dr
+           WHERE dr.id = i.daily_report_id
+             AND dr.user_id = i.user_id
+             AND dr.report_date = (now() AT TIME ZONE 'Asia/Tokyo')::date
+        )
+      )
+      OR i.status = 'DOING'::todo.item_status
+    )`);
   } else if (bucket === 'someday') {
     where.push(`i.today_flag = false`);
   }
@@ -101,7 +132,10 @@ router.get('/items', async (req, res) => {
     SELECT
       i.id, i.title, i.description, i.status, i.today_flag, i.priority, i.due_at, i.category,
       i.unit, i.target_amount, i.remaining_amount, i.tags_text,
-      i.plan_start_at, i.plan_end_at, i.daily_report_id, i.created_at, i.updated_at,
+      i.plan_start_at, i.plan_end_at, i.planned_minutes, i.sort_order,
+      i.started_at, i.completed_at, i.daily_report_id, i.favorite, i.note,
+      i.kind, i.todo_flag,
+      i.created_at, i.updated_at,
       COALESCE((
         SELECT SUM(
           CASE WHEN s.end_at IS NOT NULL
@@ -139,7 +173,9 @@ router.post('/items', async (req, res) => {
     title, description, priority,
     due_at, due_date, due_time,
     category, unit, target_amount, remaining_amount, pin_today,
-    plan_start_at, plan_end_at, daily_report_id,
+    kind, todo_flag,
+    plan_start_at, plan_end_at, planned_minutes, sort_order, daily_report_id,
+    favorite, note,
   } = req.body || {};
   if (!title) return res.status(400).json({ error: 'title は必須です' });
 
@@ -149,16 +185,25 @@ router.post('/items', async (req, res) => {
   const q = `
     INSERT INTO todo.items
       (user_id, title, description, status, today_flag, priority, due_at, category, unit,
-       target_amount, remaining_amount, tags_text, plan_start_at, plan_end_at, daily_report_id)
-    VALUES ($1,$2,$3,'INBOX'::todo.item_status,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       target_amount, remaining_amount, tags_text,
+       plan_start_at, plan_end_at, planned_minutes, sort_order, daily_report_id,
+       favorite, note, kind, todo_flag)
+    VALUES
+      ($1,$2,$3,'INBOX'::todo.item_status,$4,$5,$6,$7,$8,
+       $9,$10,$11,
+       $12,$13,$14,$15,$16,
+       $17,$18,$19::todo.item_kind,$20)
     RETURNING *`;
   const vals = [
     userId, title, description ?? null,
     pin_today === true, normalizePriority(priority),
     computedDueAt ?? null, category ?? null, unit ?? null,
     target_amount ?? null, remaining_amount ?? null,
-    tagsCsv, plan_start_at ?? null, plan_end_at ?? null,
-    (Number.isInteger(daily_report_id) ? daily_report_id : null),
+    tagsCsv,
+    plan_start_at ?? null, plan_end_at ?? null, (planned_minutes ?? null), (Number.isInteger(sort_order) ? sort_order : null), (Number.isInteger(daily_report_id) ? daily_report_id : null),
+    (favorite === true), (note ?? null),
+    (typeof kind === 'string' ? kind : 'NORMAL'),
+    (typeof todo_flag === 'boolean' ? todo_flag : true),
   ];
   const { rows } = await db.query(q, vals);
   const row = rows[0];
@@ -178,14 +223,19 @@ router.patch('/items/:id', async (req, res) => {
   const allowed = [
     'title','description','status','priority','due_at',
     'category','unit','target_amount','remaining_amount','tags_text','today_flag',
-    'plan_start_at','plan_end_at','daily_report_id',
+    'plan_start_at','plan_end_at','planned_minutes','sort_order','daily_report_id',
+    'favorite','note',
+    'kind','todo_flag',
   ];
   const sets = [], vals = [];
   for (const k of allowed) {
-    if (k === 'due_at') continue;
+    if (k === 'due_at') continue; // 別でまとめて処理
     if (k in req.body) {
       if (k === 'status') {
         sets.push(`${k} = $${sets.length + 1}::todo.item_status`);
+        vals.push(req.body[k]);
+      } else if (k === 'kind') {
+        sets.push(`${k} = $${sets.length + 1}::todo.item_kind`);
         vals.push(req.body[k]);
       } else if (k === 'priority') {
         sets.push(`${k} = $${sets.length + 1}`);
@@ -193,6 +243,9 @@ router.patch('/items/:id', async (req, res) => {
       } else if (k === 'tags_text') {
         sets.push(`${k} = $${sets.length + 1}`);
         vals.push(normalizeTagsCsv({ tags_text: req.body[k], tags: req.body.tags }));
+      } else if (k === 'sort_order') {
+        sets.push(`${k} = $${sets.length + 1}`);
+        vals.push(Number.isInteger(req.body[k]) ? req.body[k] : null);
       } else {
         sets.push(`${k} = $${sets.length + 1}`);
         vals.push(req.body[k]);
@@ -237,7 +290,7 @@ router.post('/items/:id/start', async (req, res) => {
 
   await db.query('BEGIN');
   try {
-    const own = await db.query(`SELECT 1 FROM todo.items WHERE id=$1 AND user_id=$2`, [id, userId]);
+    const own = await db.query(`SELECT started_at FROM todo.items WHERE id=$1 AND user_id=$2`, [id, userId]);
     if (!own.rowCount) { await db.query('ROLLBACK'); return res.status(404).json({ error: 'not found' }); }
 
     // 既存DOINGを停止
@@ -253,10 +306,13 @@ router.post('/items/:id/start', async (req, res) => {
       [userId]
     );
 
-    // 対象をDOING + today_flag = true
+    // 対象をDOING + today_flag = true + started_at（初回のみ）
     await db.query(
       `UPDATE todo.items
-          SET status='DOING'::todo.item_status, today_flag=TRUE, updated_at=now()
+          SET status='DOING'::todo.item_status,
+              today_flag=TRUE,
+              started_at = COALESCE(started_at, now()),
+              updated_at=now()
         WHERE id=$1 AND user_id=$2`,
       [id, userId]
     );
@@ -320,7 +376,10 @@ router.post('/items/:id/finish', async (req, res) => {
     );
     await db.query(
       `UPDATE todo.items
-          SET status='DONE'::todo.item_status, remaining_amount=0, updated_at=now()
+          SET status='DONE'::todo.item_status,
+              remaining_amount=0,
+              completed_at = now(),
+              updated_at=now()
         WHERE id=$1 AND user_id=$2`,
       [id, userId]
     );
@@ -332,7 +391,7 @@ router.post('/items/:id/finish', async (req, res) => {
   }
 });
 
-/* ======================= Day (v1.5仕様) ======================= */
+/* ======================= Day (v1.5仕様ベース + v1.7連携) ======================= */
 
 /**
  * 共通：当日の daily_reports を upsert してIDを返す
@@ -400,6 +459,7 @@ async function handleGetDayStart(req, res) {
       FROM todo.items i
       LEFT JOIN todo.daily_reports dr ON dr.id = i.daily_report_id AND dr.id = $2
       WHERE i.user_id = $1
+        AND i.kind = 'NORMAL'::todo.item_kind
         AND (
           dr.id IS NOT NULL
           OR (i.daily_report_id IS NULL AND i.status <> 'DONE'::todo.item_status)
@@ -517,7 +577,6 @@ router.post('/day/start/confirm', handlePostDayStartConfirm);
  * POST /day/close
  * body: {
  *   date?: "YYYY-MM-DD",
- *   memo?: string,
  *   items?: [{ id:number, planned_minutes?:number|null, spent_minutes?:number|null,
  *              remaining_amount?:number|null, note?:string }]
  * }
@@ -532,7 +591,6 @@ async function handlePostDayClose(req, res) {
   if (!userId) return res.status(401).json({ error: 'unauthorized' });
 
   const dateStr = resolveJstDate(req.body?.date);
-  const memo = typeof req.body?.memo === 'string' ? req.body.memo : '';
   const inputs = Array.isArray(req.body?.items) ? req.body.items : [];
 
   function jstBounds(ymd) {
@@ -631,13 +689,14 @@ async function handlePostDayClose(req, res) {
       // 予定分
       const planned =
         (inp.planned_minutes != null) ? Number(inp.planned_minutes) :
+        (it.planned_minutes != null) ? Number(it.planned_minutes) :
         (it.plan_start_at && it.plan_end_at)
           ? Math.max(0, Math.round((new Date(it.plan_end_at) - new Date(it.plan_start_at)) / 60000))
           : null;
 
       const sessionsArr = sessByItem.get(itemIdNum) || [];
 
-      // ★各セッション要素に予定情報を付与
+      // セッション要素に予定情報を付与
       const sessionsArrWithPlan = sessionsArr.map(s => ({
         ...s,
         plan_start_at: it.plan_start_at || null,
@@ -681,7 +740,7 @@ async function handlePostDayClose(req, res) {
           it.remaining_amount, // $7
           it.unit,             // $8
           tagsArr,             // $9
-          (inp.note ?? null),  // $10
+          (inp.note ?? it.note ?? null),  // $10
           sessionsJson         // $11
         ]
       );
@@ -707,14 +766,14 @@ async function handlePostDayClose(req, res) {
             it.remaining_amount,
             it.unit,
             tagsArr,
-            (inp.note ?? null),
+            (inp.note ?? it.note ?? null),
             sessionsJson
           ]
         );
       }
     }
 
-    // ★ 追加：note が未設定(null もしくは空文字)の行に、items.description を後追いコピー
+    // description の後追いコピー（note 未設定のみ）
     await db.query(
       `
       UPDATE todo.daily_report_items AS dri
@@ -728,8 +787,7 @@ async function handlePostDayClose(req, res) {
       [reportId, userId]
     );
 
-    // --- レポートの締め ---
-    // メモは更新しない（summary->memo を触らない）
+    // レポートの締め
     await db.query(
       `
       UPDATE todo.daily_reports
@@ -740,7 +798,7 @@ async function handlePostDayClose(req, res) {
       [reportId]
     );
 
-    // --- 該当 items に紐づく sessions（当ユーザー分のみ）を全削除 ---
+    // セッション削除（当ユーザー分のみ）
     await db.query(
       `
       DELETE FROM todo.sessions
@@ -750,7 +808,7 @@ async function handlePostDayClose(req, res) {
       [userId, itemIdList]
     );
 
-    // --- 未完了は再利用・完了は物理削除 ---
+    // 未完了は再利用・完了は物理削除
     await db.query(
       `
       UPDATE todo.items

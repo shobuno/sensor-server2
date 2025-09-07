@@ -1,9 +1,11 @@
-// apps/todo/frontend/src/lib/apiTodo.ts
-// 既存の認証付きフェッチを使うことで Authorization/Cookie を確実に付与する
+// sensor-server/apps/todo/frontend/src/lib/apiTodo.ts
+
 import { fetchJson } from "@/auth";
 
 /* ========================== Types =========================== */
 export type ItemStatus = "INBOX" | "DOING" | "PAUSED" | "DONE";
+export type ItemType = "normal" | "template" | "repeat_rule";
+
 export interface Item {
   id: number;
   title: string;
@@ -21,6 +23,12 @@ export interface Item {
   daily_report_id?: number | null;
   created_at?: string;
   updated_at?: string;
+
+  // v1.7 追加
+  item_type?: ItemType;             // normal / template / repeat_rule
+  todo_flag?: boolean;              // true=時間管理なし TODO
+  default_todo_flag?: boolean;      // template/repeat_rule 用
+  default_today_flag?: boolean;     // template/repeat_rule 用
 }
 
 export interface DayStartResponse {
@@ -44,9 +52,13 @@ const BASE = "/api/todo";
 async function req<T>(path: string, init?: RequestInit & { body?: any; json?: any }): Promise<T> {
   const url = `${BASE}${path}`;
   let opts: any = init ?? {};
-  // init.json を指定されたら JSON に整形（既存 fetchJson に合わせておく）
   if (opts.json !== undefined) {
-    opts = { ...opts, method: opts.method ?? "POST", headers: { "Content-Type": "application/json", ...(opts.headers || {}) }, body: JSON.stringify(opts.json) };
+    opts = {
+      ...opts,
+      method: opts.method ?? "POST",
+      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+      body: JSON.stringify(opts.json),
+    };
     delete opts.json;
   }
   return await fetchJson(url, opts);
@@ -65,13 +77,22 @@ export async function getStartCandidates(): Promise<{ items: Item[] }> {
   return await req<{ items: Item[] }>("/day/start");
 }
 
-export async function listItems(params?: Record<string, any>): Promise<{ items: Item[] } | Item[]> {
-  const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+export async function listItems(params?: {
+  item_type?: ItemType;
+  todo_flag?: boolean;
+  [key: string]: any;
+}): Promise<{ items: Item[] } | Item[]> {
+  const qs = params ? `?${new URLSearchParams(params as any).toString()}` : "";
   return await req<{ items: Item[] } | Item[]>(`/items${qs}`);
 }
 
 export async function patchItem(id: number, body: Partial<Item>): Promise<Item> {
   return await req<Item>(`/items/${id}`, { method: "PATCH", json: body });
+}
+
+// ★ normal の新規作成
+export async function createItem(body: Partial<Item>): Promise<Item> {
+  return await req<Item>(`/items`, { method: "POST", json: body });
 }
 
 /* ====== DailyReport API（period_* に統一） ====== */
@@ -87,3 +108,20 @@ export async function patchReport(
 }
 
 export const updateReport = patchReport;
+
+/* ====== Template API ====== */
+export async function registerTemplate(id: number): Promise<Item> {
+  return await req<Item>(`/templates/${id}/register`, { method: "POST" });
+}
+
+export async function listTemplates(): Promise<Item[]> {
+  return await req<Item[]>("/templates");
+}
+
+export async function createTemplate(body: Partial<Item>): Promise<Item> {
+  return await req<Item>("/templates", { method: "POST", json: body });
+}
+
+export async function addTemplateToToday(id: number): Promise<Item> {
+  return await req<Item>(`/templates/${id}/add-today`, { method: "POST" });
+}

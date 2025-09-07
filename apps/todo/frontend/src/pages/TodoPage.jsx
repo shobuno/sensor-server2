@@ -97,7 +97,6 @@ export default function TodoPage() {
       <div className="flex gap-2">
         <TabBtn k="start" label="今日の開始" />
         <TabBtn k="today" label="今日" />
-        <TabBtn k="add" label={isEdit ? "編集" : "追加"} />
         <TabBtn k="reports" label="履歴" />
         <TabBtn k="close" label="今日の終了" />
       </div>
