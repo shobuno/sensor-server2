@@ -6,22 +6,27 @@ const db = require('../../../../backend/config/db');
 // JWT のどのキーに UUID が入っていても拾える
 function getUserId(req) { return req?.user?.id || req?.user?.id_uuid; }
 
+/** tags/tags_text を CSV に正規化（items.tags_text に保存する前提） */
+function normalizeTagsCsv(body) {
+  const { tags, tags_text } = body || {};
+  if (typeof tags_text === 'string' && tags_text.trim() !== '') return tags_text.trim();
+  if (Array.isArray(tags)) return tags.map(String).map(s => s.trim()).filter(Boolean).join(',');
+  return null;
+}
+
 /** JST の今日の日付で時刻だけを差し替える */
 function toTodayWithTimeJST(dateLike) {
   if (!dateLike) return null;
   const src = new Date(dateLike);
   if (Number.isNaN(src.getTime())) return null;
 
-  // 現地→UTCの分（例: JST は -540）
-  const tzOffMin = new Date().getTimezoneOffset();
-  // 今日のJST 00:00
+  const tzOffMin = new Date().getTimezoneOffset(); // 現地→UTCの分（JSTは -540）
   const now = new Date();
   const jstNow = new Date(now.getTime() + (9 * 60 + tzOffMin) * 60000);
   const y = jstNow.getFullYear();
   const m = jstNow.getMonth();
   const d = jstNow.getDate();
 
-  // 元の時刻（ローカル扱い）
   const hh = src.getHours();
   const mm = src.getMinutes();
   const ss = src.getSeconds();
@@ -57,13 +62,15 @@ router.post('/', async (req, res) => {
   const userId = getUserId(req);
   const b = req.body || {};
   try {
+    const tagsCsv = normalizeTagsCsv(b);
     const { rows } = await db.query(
       `INSERT INTO todo.items
         (user_id, title, description, status, today_flag, priority, due_at,
          plan_start_at, plan_end_at, category, unit, target_amount, remaining_amount,
-         kind, todo_flag, sort_order)
+         kind, todo_flag, sort_order, tags_text)
        VALUES
-        ($1,$2,$3,'INBOX',false,$4,$5,$6,$7,$8,$9,$10,$11,'TEMPLATE'::todo.item_kind,$12,0)
+        ($1,$2,$3,'INBOX',false,$4,$5,$6,$7,$8,$9,$10,$11,
+         'TEMPLATE'::todo.item_kind,$12,0,$13)
        RETURNING *`,
       [
         userId,
@@ -78,6 +85,7 @@ router.post('/', async (req, res) => {
         b.target_amount ?? null,
         b.remaining_amount ?? null,
         b.todo_flag === true,
+        tagsCsv,
       ]
     );
     res.status(201).json(rows[0]);
@@ -124,26 +132,28 @@ router.post('/:id/add-today', async (req, res) => {
       t.description,
       true, // today_flag
       t.priority,
-      t.due_at, // そのまま継承
+      t.due_at,           // そのまま継承
       startToday,
       endToday,
       t.category,
       t.unit,
       t.target_amount,
       t.remaining_amount,
-      'NORMAL', // ★ 生成先は通常アイテム
+      'NORMAL',           // 生成先は通常アイテム
       t.todo_flag,
-      dailyReportId, // 今日の日報があれば紐付け
-      0, // sort_order 既定
+      dailyReportId,      // 今日の日報があれば紐付け
+      0,                  // sort_order
+      t.tags_text || null // ★ タグを引き継ぐ
     ];
 
     const { rows: created } = await db.query(
       `INSERT INTO todo.items
         (user_id, title, description, status, today_flag, priority, due_at,
          plan_start_at, plan_end_at, category, unit, target_amount, remaining_amount,
-         kind, todo_flag, daily_report_id, sort_order)
+         kind, todo_flag, daily_report_id, sort_order, tags_text)
        VALUES
-        ($1,$2,$3,'INBOX',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::todo.item_kind,$14,$15,$16)
+        ($1,$2,$3,'INBOX',$4,$5,$6,$7,$8,$9,$10,$11,$12,
+         $13::todo.item_kind,$14,$15,$16,$17)
        RETURNING *`,
       params
     );
