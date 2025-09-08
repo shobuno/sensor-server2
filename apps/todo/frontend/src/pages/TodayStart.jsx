@@ -539,17 +539,21 @@ export default function TodayStart({ onEmptyInbox }) {
         // kind と TODO型
         kind: "NORMAL",
         todo_flag: !!values.todo_flag,
-        // 今日の開始から作るので今日に入れる
-        pin_today: true,                   // ← backend の POST /items で today_flag 初期化に使用
-        daily_report_id: dailyReportId ?? null,
+        // ← ここを「必ず含める」+ DRID も連動
+        today_flag: values.today_flag === true ? true : false,
+        daily_report_id: values.today_flag === true ? (dailyReportId ?? null) : null,
+
       });
-      // 画面に即反映（checked 扱いにする）
+
+      // 画面にもサーバの戻り値（or 入力値）を忠実に反映
       setItems((arr) => [
         {
           ...created,
           tags: parseTagsCsv(created.tags_text),
-          today_flag: true,
-          daily_report_id: dailyReportId ?? null,
+          today_flag: created.today_flag ?? (values.today_flag === true),
+          daily_report_id:
+            created.daily_report_id ??
+            (values.today_flag === true ? (dailyReportId ?? null) : null),
         },
         ...arr,
       ]);

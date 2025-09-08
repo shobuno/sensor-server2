@@ -55,6 +55,17 @@ function addDaysYmd(ymd, days) {
   return `${yy}-${mm}-${dd}`;
 }
 
+function normalizeBool(v, fallback = null) {
+  if (v === true)  return true;
+  if (v === false) return false;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    if (['true','1','on','yes'].includes(s))  return true;
+    if (['false','0','off','no'].includes(s)) return false;
+  }
+  return fallback; // 解析できなければ既定に委ねる
+}
+
 /* ======================= Items: CRUD / List ======================= */
 
 /** GET /items/:id */
@@ -172,7 +183,11 @@ router.post('/items', async (req, res) => {
   const {
     title, description, priority,
     due_at, due_date, due_time,
-    category, unit, target_amount, remaining_amount, pin_today,
+    category, unit, target_amount, remaining_amount,
+    // 旧パラメータ互換
+    pin_today,
+    // 新パラメータ
+    today_flag,
     kind, todo_flag,
     plan_start_at, plan_end_at, planned_minutes, sort_order, daily_report_id,
     favorite, note,
@@ -181,6 +196,11 @@ router.post('/items', async (req, res) => {
 
   const tagsCsv = normalizeTagsCsv(req.body);
   const computedDueAt = buildDueAt({ due_at, due_date, due_time });
+
+  // today_flag の正規化（未指定は true、旧 pin_today=true も尊重）
+  const tf = normalizeBool(today_flag, null);
+  const todayFlag = (tf !== null) ? tf
+                   : (pin_today === true ? true : true); // 仕様どおり既定 true
 
   const q = `
     INSERT INTO todo.items
@@ -195,21 +215,26 @@ router.post('/items', async (req, res) => {
        $17,$18,$19::todo.item_kind,$20)
     RETURNING *`;
   const vals = [
-    userId, title, description ?? null,
-    pin_today === true, normalizePriority(priority),
-    computedDueAt ?? null, category ?? null, unit ?? null,
-    target_amount ?? null, remaining_amount ?? null,
+    userId, title, (description ?? null),
+    todayFlag, normalizePriority(priority),
+    (computedDueAt ?? null), (category ?? null), (unit ?? null),
+    (target_amount ?? null), (remaining_amount ?? null),
     tagsCsv,
-    plan_start_at ?? null, plan_end_at ?? null, (planned_minutes ?? null), (Number.isInteger(sort_order) ? sort_order : null), (Number.isInteger(daily_report_id) ? daily_report_id : null),
+    (plan_start_at ?? null), (plan_end_at ?? null),
+    (planned_minutes ?? null),
+    (Number.isInteger(sort_order) ? sort_order : null),
+    (Number.isInteger(daily_report_id) ? daily_report_id : null),
     (favorite === true), (note ?? null),
     (typeof kind === 'string' ? kind : 'NORMAL'),
     (typeof todo_flag === 'boolean' ? todo_flag : true),
   ];
+
   const { rows } = await db.query(q, vals);
   const row = rows[0];
   row.priority = denormalizePriority(row.priority);
   res.status(201).json(row);
 });
+
 
 /** PATCH /items/:id */
 router.patch('/items/:id', async (req, res) => {
@@ -231,6 +256,11 @@ router.patch('/items/:id', async (req, res) => {
   for (const k of allowed) {
     if (k === 'due_at') continue; // 別でまとめて処理
     if (k in req.body) {
+      if (k === 'today_flag') {
+        sets.push(`${k} = $${sets.length + 1}`);
+        vals.push(normalizeBool(req.body[k], false)); // 解析不可なら false などに寄せたい場合はここを調整
+        continue;
+      }
       if (k === 'status') {
         sets.push(`${k} = $${sets.length + 1}::todo.item_status`);
         vals.push(req.body[k]);

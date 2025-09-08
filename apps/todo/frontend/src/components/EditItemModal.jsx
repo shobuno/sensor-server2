@@ -1,5 +1,6 @@
 // sensor-server/apps/todo/frontend/src/components/EditItemModal.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
 
 /* ===== datetime-local 入出力（JST固定） ===== */
 function isoToLocalDTInputJST(iso) {
@@ -26,7 +27,8 @@ const numOrNull = (v) => (v === "" || v == null ? null : Number(v));
  * - onDelete?(id): void   ← 省略可。渡すとフッター左に「削除」ボタン表示
  * - defaultUnit: 新規時の単位初期値（例: "分"）
  */
-export default function EditItemModal({ item, onCancel, onSave, onDelete, defaultUnit = "" }) {
+ export default function EditItemModal({ item, onCancel, onSave, onDelete, defaultUnit = "" }) {
+  const isNew = item?.id == null;
   // 基本
   const [title, setTitle] = useState(item?.title || "");
   const [priority, setPriority] = useState(item?.priority ?? 3);
@@ -35,6 +37,9 @@ export default function EditItemModal({ item, onCancel, onSave, onDelete, defaul
   const [description, setDescription] = useState(item?.description ?? "");
   const [todoFlag, setTodoFlag] = useState(Boolean(item?.todo_flag));
   const kindStr = item?.kind ? String(item.kind).toUpperCase() : "";
+
+  // ★ 今日フラグ（未指定時はデフォルト true）
+  const [todayFlag, setTodayFlag] = useState(item?.today_flag ?? true);
 
   // 期限（開始/終了と同じ UI に統一）
   const [noDue, setNoDue] = useState(!item?.due_at);
@@ -64,6 +69,32 @@ export default function EditItemModal({ item, onCancel, onSave, onDelete, defaul
   };
   const removeTag = (t) => setTags((arr) => arr.filter((x) => x !== t));
 
+   // ===== item が変わったら state を同期し直す（モーダル再オープン対策） =====
+   useEffect(() => {
+     setTitle(item?.title || "");
+     setPriority(item?.priority ?? 3);
+     setCategory(item?.category ?? "");
+     setTags(item?.tags || []);
+     setDescription(item?.description ?? "");
+     setTodoFlag(Boolean(item?.todo_flag));
+     setTodayFlag(item?.today_flag ?? true); // ← ここ重要
+
+     setNoDue(!item?.due_at);
+     setDueLocal(isoToLocalDTInputJST(item?.due_at));
+
+     setNoStart(!item?.plan_start_at);
+     setNoEnd(!item?.plan_end_at);
+     setPlanStartLocal(isoToLocalDTInputJST(item?.plan_start_at));
+     setPlanEndLocal(isoToLocalDTInputJST(item?.plan_end_at));
+
+     const initPlanned = item?.planned_amount ?? item?.target_amount ?? "";
+     setPlannedAmount(initPlanned === null ? "" : initPlanned);
+     setRemainingAmount(item?.remaining_amount === null ? "" : (item?.remaining_amount ?? ""));
+     setUnit(item?.unit ?? defaultUnit);
+     setTagInput("");
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [item?.id]);
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden" onClick={onCancel}>
       {/* 背景 */}
@@ -91,6 +122,7 @@ export default function EditItemModal({ item, onCancel, onSave, onDelete, defaul
                 </span>
               )}
               {todoFlag && <span className="text-[10px] px-2 py-0.5 rounded bg-slate-600 text-white">TODO</span>}
+              {todayFlag && <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-600 text-white">今日</span>}
               <button className="ml-auto text-sm text-gray-500" onClick={onCancel}>閉じる</button>
             </div>
           </div>
@@ -102,6 +134,18 @@ export default function EditItemModal({ item, onCancel, onSave, onDelete, defaul
               <input type="checkbox" checked={todoFlag} onChange={(e) => setTodoFlag(e.target.checked)} />
               <span>TODO型（開始ボタンなし・チェックで完了）</span>
             </label>
+
+            {/* ★ 今日フラグトグル：新規作成時のみ表示 */}
+            {isNew && (
+              <label className="flex items-center gap-2 text-sm border rounded p-2">
+                <input
+                  type="checkbox"
+                  checked={todayFlag}
+                  onChange={(e) => setTodayFlag(e.target.checked)}
+                />
+                <span>今日に入れる（today_flag）</span>
+              </label>
+            )}
 
             {/* タイトル */}
             <label className="block text-sm">
@@ -298,6 +342,9 @@ export default function EditItemModal({ item, onCancel, onSave, onDelete, defaul
                     description,
                     todo_flag: !!todoFlag,
 
+                    // ★ today_flag（UIの設定をそのまま送る / 新規は既定で true）
+                    today_flag: !!todayFlag,
+
                     // 期限（JST）
                     no_due: !!noDue,
                     due_at: noDue ? null : localDTInputToIsoJST(dueLocal),
@@ -307,9 +354,9 @@ export default function EditItemModal({ item, onCancel, onSave, onDelete, defaul
                     plan_end_at:   noEnd   ? null : localDTInputToIsoJST(planEndLocal),
 
                     // 数値系（双方の呼び出しに合わせる）
-                    target_amount:   numOrNull(plannedAmount),
-                    planned_amount:  numOrNull(plannedAmount),
-                    remaining_amount:numOrNull(remainingAmount),
+                    target_amount:    numOrNull(plannedAmount),
+                    planned_amount:   numOrNull(plannedAmount),
+                    remaining_amount: numOrNull(remainingAmount),
                     unit: unit || defaultUnit || null,
                   })
                 }

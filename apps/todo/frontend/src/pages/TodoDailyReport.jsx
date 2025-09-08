@@ -192,24 +192,49 @@ export default function TodoDailyReport() {
     } finally { setSaving(false); }
   };
 
-  // タイムライン表示範囲（±1h、無い時は 8–19 時）
+  // タイムライン表示範囲
+  // - 履歴（保存済み=header.idあり）: 既存通り period_* を基準に ±1h
+  // - プレビュー（保存前=header.idなし）:
+  //     * 今日かつ現在時刻が19時超なら 8:00 〜 (現在時刻+2h)
+  //     * それ以外は従来通り 8:00 〜 19:00
   const timelineWindow = useMemo(() => {
     const padMin = 60;
-    const toDate = (v) => (v ? new Date(v) : null);
-    let start = toDate(header?.period_start_at);
-    let end   = toDate(header?.period_end_at) || (editDate ? new Date(`${editDate}T19:00:00`) : null);
-    if (start && !end) end = new Date();
-    if (!start || !end) {
-      const base = editDate ? new Date(`${editDate}T00:00:00`) : new Date();
+    const isSnapshot = !!header?.id;
+    const isToday = editDate === todayIso;
+
+    if (isSnapshot) {
+      const start = header?.period_start_at ? new Date(header.period_start_at) : null;
+      const endRaw =
+        header?.period_end_at
+          ? new Date(header.period_end_at)
+          : (header?.period_start_at ? new Date() : null);
+      if (start && endRaw) {
+        return {
+          winStart: new Date(start.getTime() - padMin * 60000),
+          winEnd:   new Date(endRaw.getTime() + padMin * 60000),
+        };
+      }
+      // period_* が欠けるスナップショットは稀だが、保険として 8–19
+      const base = new Date(`${editDate}T00:00:00`);
       const s = new Date(base); s.setHours(8,0,0,0);
       const e = new Date(base); e.setHours(19,0,0,0);
       return { winStart: s, winEnd: e };
     }
-    return {
-      winStart: new Date(start.getTime() - padMin * 60000),
-      winEnd:   new Date(end.getTime()   + padMin * 60000),
-    };
-  }, [header?.period_start_at, header?.period_end_at, editDate]);
+
+    // ここからプレビュー
+    const base = new Date(`${editDate}T00:00:00`);
+    const s = new Date(base); s.setHours(8,0,0,0);
+    let e = new Date(base); e.setHours(19,0,0,0);
+
+    if (isToday) {
+      const now = new Date();
+    if (now.getHours() >= 19) {
+        // 右端を現在時刻+2時間に
+        e = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+      }
+    }
+    return { winStart: s, winEnd: e };
+  }, [header?.id, header?.period_start_at, header?.period_end_at, editDate, todayIso]);
 
   /* ===== サマリ（プレビューは計算値を強制使用） ===== */
   const totalsFromItems = useMemo(() => {
