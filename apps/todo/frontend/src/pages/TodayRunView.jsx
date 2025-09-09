@@ -348,10 +348,14 @@ export default function TodayRunView() {
             </div>
           )}
 
-          {/* ===== TODO欄（下部にまとめて・シンプル表示） ===== */}
+          {/* ===== TODO欄（下部にまとめて・スマホ省スペース版） ===== */}
           {todoCards.length > 0 && (
             <div className="mt-6 border rounded-2xl p-2 sm:p-3">
-              <div className="text-xs text-muted-foreground px-1 pb-1">TODO（チェックで完了）</div>
+              {/* 見出し（PCも太字・少し大きく） */}
+              <div className="px-1 pb-1 font-bold text-sm md:text-base">
+                TODO（チェックで完了）
+              </div>
+
               <div className="space-y-2">
                 {todoCards.map((it) => {
                   const isDone = String(it.status || "").toUpperCase() === "DONE";
@@ -365,29 +369,30 @@ export default function TodayRunView() {
                       onDoubleClick={(e) => onCardDblClick(e, it)}
                       title="ダブルクリックで編集"
                     >
+                      {/* 1行に タイトル → ★ → 編集 → 完了チェック を横並び（スマホで高さ節約） */}
                       <div className="flex items-center gap-2">
-                        <div className="flex-1 min-w-0 flex items-center gap-2">
-                          <span className={`truncate ${isDone ? "line-through" : ""}`}>{it.title}</span>
-                          {it.priority && <span className="text-yellow-500 shrink-0">{"★".repeat(it.priority)}</span>}
-                          <span className="text-[10px] text-white bg-slate-500 rounded px-1 py-0.5 shrink-0">TODO</span>
+                        <div className="flex-1 min-w-0 truncate">
+                          <span className={isDone ? "line-through" : ""}>{it.title}</span>
+                          {it.priority && (
+                            <span className="ml-1 text-yellow-500">
+                              {"★".repeat(it.priority)}
+                            </span>
+                          )}
                         </div>
 
-                        {/* 編集ボタン（小型） */}
+                        {/* 編集ボタン（同一行） */}
                         <button
-                          className="px-2 py-1.5 rounded-xl border hover:bg-gray-50 text-sm"
+                          className="px-2 py-1 rounded-lg border hover:bg-gray-50 text-xs sm:text-sm"
                           onClick={(e) => { e.stopPropagation(); setEditing(it); }}
                           title="編集"
                           aria-label="編集"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 inline-block align-[-2px]" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M13.586 3a2 2 0 0 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zM12.379 5.207 3 14.586V18h3.414l9.379-9.379-3.414-3.414z"/>
-                          </svg>
-                          <span className="ml-1 hidden sm:inline">編集</span>
+                          編集
                         </button>
 
-                        {/* 完了チェック */}
+                        {/* 完了チェック（同一行） */}
                         <label
-                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-background text-sm shrink-0"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-background text-xs sm:text-sm"
                           onClick={(e) => e.stopPropagation()}
                           title="完了（TODO型）"
                         >
@@ -404,6 +409,7 @@ export default function TodayRunView() {
                         </label>
                       </div>
 
+                      {/* 期限があれば2行目にだけ表示（PC/スマホ共通） */}
                       {(it.due_at || it.due_date) && (
                         <div className="mt-1 text-xs text-muted-foreground">
                           {isOverdue(it) && (
@@ -486,25 +492,28 @@ function TaskCard({
                 </span>
               </>
             )}
-            {it.category && (
-              <button
-                type="button"
-                onClick={() => onSelectCategory(categoryFilter === it.category ? null : it.category)}
-                className={chipClass(categoryFilter === it.category)}
-              >
-                {it.category}
-              </button>
-            )}
-            {(it.tags || []).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => onToggleTag(t)}
-                className={chipClass(tagFilter.has(t))}
-              >
-                #{t}
-              </button>
-            ))}
+            {/* スマホではタグ・カテゴリ非表示、PCでは表示 */}
+            <div className="hidden sm:flex items-center gap-2 flex-wrap">
+              {it.category && (
+                <button
+                  type="button"
+                  onClick={() => onSelectCategory(categoryFilter === it.category ? null : it.category)}
+                  className={chipClass(categoryFilter === it.category)}
+                >
+                  {it.category}
+                </button>
+              )}
+              {(it.tags || []).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => onToggleTag(t)}
+                  className={chipClass(tagFilter.has(t))}
+                >
+                  #{t}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -584,8 +593,9 @@ function TaskCard({
           <span className="px-2 py-0.5 rounded-full border bg-background">
             本日: {fmtDur(todaySec)}
           </span>
+          {/* 📱 携帯では「残」を非表示、💻 PCでは従来通り表示 */}
           {Number.isFinite(it.remaining_amount) && it.remaining_amount > 0 && (
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground hidden sm:inline">
               / 残: {it.remaining_amount}{it.unit ? ` ${it.unit}` : ""}
             </span>
           )}
