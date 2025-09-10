@@ -1,7 +1,9 @@
 // server2/apps/todo/frontend/src/pages/TodayStart.jsx
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { getDayStart, getReport, patchReport, patchItem, listItems,
-         listTemplates, createTemplate, addTemplateToToday, createItem } from "../lib/apiTodo";
+import {
+  getDayStart, getReport, patchReport, patchItem, listTemplates,
+  createTemplate, addTemplateToToday, createItem
+} from "../lib/apiTodo";
 import EditItemModal from "../components/EditItemModal";
 import { fetchJson } from "@/auth";
 import useSessionState from "@todo/hooks/useSessionState.js";
@@ -16,20 +18,14 @@ function isoToYmdSlashJST(iso) {
   if (!iso) return null;
   const d = new Date(iso);
   return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
   }).format(d);
 }
 function hhmmFromISOJST(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
+    timeZone: "Asia/Tokyo", hour12: false, hour: "2-digit", minute: "2-digit",
   }).format(d);
 }
 function parseTagsCsv(csv) {
@@ -53,14 +49,10 @@ const isTodoKind = (item) =>
 
 async function toggleDoneTodoKind(item, checked, setItems) {
   const nextStatus = checked ? "DONE" : "INBOX";
-  const payload = {
-    status: nextStatus,
-    completed_at: checked ? new Date().toISOString() : null,
-  };
+  const payload = { status: nextStatus, completed_at: checked ? new Date().toISOString() : null };
   setItems((arr) => arr.map((it) => (it.id === item.id ? { ...it, ...payload } : it)));
-  try {
-    await patchItem(item.id, payload);
-  } catch (e) {
+  try { await patchItem(item.id, payload); }
+  catch (e) {
     console.error(e);
     setItems((arr) =>
       arr.map((it) =>
@@ -83,8 +75,7 @@ function sortByDueAndPriority(items) {
     const ad = tsOrInf(a.due_at || (a.due_date ? `${a.due_date}T00:00:00` : null));
     const bd = tsOrInf(b.due_at || (b.due_date ? `${b.due_date}T00:00:00` : null));
     if (ad !== bd) return ad - bd;
-    const ap = a.priority ?? 0;
-    const bp = b.priority ?? 0;
+    const ap = a.priority ?? 0, bp = b.priority ?? 0;
     if (ap !== bp) return bp - ap;
     return (a.id || 0) - (b.id || 0);
   });
@@ -96,9 +87,7 @@ function isoToLocalDTInputJST(iso) {
   const d = new Date(iso);
   const pad = (n) => String(n).padStart(2, "0");
   const j = new Date(d.getTime() + (9 * 60 + d.getTimezoneOffset()) * 60000);
-  return `${j.getFullYear()}-${pad(j.getMonth() + 1)}-${pad(j.getDate())}T${pad(j.getHours())}:${pad(
-    j.getMinutes()
-  )}`;
+  return `${j.getFullYear()}-${pad(j.getMonth() + 1)}-${pad(j.getDate())}T${pad(j.getHours())}:${pad(j.getMinutes())}`;
 }
 function localDTInputToIsoJST(v) {
   if (!v || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) return null;
@@ -108,12 +97,7 @@ function localDTInputToIsoJST(v) {
 /* ===== 期限（日付/時刻） ←→ ISO(JST) 変換 ===== */
 function isoToYmdJST(iso) {
   if (!iso) return "";
-  const parts = new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(iso));
+  const parts = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(iso));
   const y = parts.find((p) => p.type === "year")?.value || "";
   const m = parts.find((p) => p.type === "month")?.value || "";
   const d = parts.find((p) => p.type === "day")?.value || "";
@@ -121,12 +105,7 @@ function isoToYmdJST(iso) {
 }
 function isoToHmJST(iso) {
   if (!iso) return "";
-  const parts = new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(new Date(iso));
+  const parts = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour12: false, hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(iso));
   const hh = parts.find((p) => p.type === "hour")?.value || "00";
   const mm = parts.find((p) => p.type === "minute")?.value || "00";
   return `${hh}:${mm}`;
@@ -137,6 +116,22 @@ function ymdHmToIsoJST(ymd, hm) {
   return `${ymd}T${t}:00+09:00`;
 }
 const numOrNull = (v) => (v === "" || v == null ? null : Number(v));
+
+/* ====== 簡易トースト ====== */
+function useToast() {
+  const [toast, setToast] = useState(null); // {msg, id}
+  const show = useCallback((msg) => {
+    const id = Math.random().toString(36).slice(2);
+    setToast({ msg, id });
+    setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 1800);
+  }, []);
+  const node = toast ? (
+    <div className="fixed z-[1000] left-1/2 -translate-x-1/2 bottom-6 px-3 py-2 rounded-lg shadow bg-black text-white text-sm">
+      {toast.msg}
+    </div>
+  ) : null;
+  return { show, node };
+}
 
 export default function TodayStart({ onEmptyInbox }) {
   const [loading, setLoading] = useState(true);
@@ -165,25 +160,16 @@ export default function TodayStart({ onEmptyInbox }) {
   // クリック遅延（シングル vs ダブル）
   const [clickTimer, setClickTimer] = useState(null);
   const onRowClick = (it) => {
-    if (clickTimer) {
-      clearTimeout(clickTimer);
-      setClickTimer(null);
-    }
+    if (clickTimer) { clearTimeout(clickTimer); setClickTimer(null); }
     const t = setTimeout(() => {
       if (kindTab === "normal") toggleCheck(it);
       setClickTimer(null);
     }, 200);
     setClickTimer(t);
   };
-  const onRowDoubleClick = (e, it) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (clickTimer) {
-      clearTimeout(clickTimer);
-      setClickTimer(null);
-    }
-    setEditing(it);
-  };
+  const onRowDoubleClick = (e, it) => { e.preventDefault(); e.stopPropagation(); if (clickTimer) { clearTimeout(clickTimer); setClickTimer(null); } setEditing(it); };
+
+  const { show: showToast, node: toastNode } = useToast();
 
   // 初期ロード & タブ切替時ロード
   useEffect(() => {
@@ -193,30 +179,22 @@ export default function TodayStart({ onEmptyInbox }) {
       setError(null);
       try {
         if (kindTab === "template") {
-          // 専用エンドポイントでテンプレ一覧
           const rowsRaw = await listTemplates();
           if (!mounted) return;
           setItems(rowsRaw.map((it) => ({ ...it, tags: parseTagsCsv(it.tags_text) })));
-
-          setReport(null);
-          setDailyReportId(null);
-          setTimeInput("");
+          setReport(null); setDailyReportId(null); setTimeInput("");
         } else {
-          // normal（既存フロー）
           const payload = await getDayStart();
           if (!mounted) return;
           const drId = payload?.daily_report_id ?? null;
           const rows = Array.isArray(payload?.items) ? payload.items : [];
           setDailyReportId(drId);
-          setItems(
-            rows.map((it) => ({
-              ...it,
-              due_date: it.due_at ? String(it.due_at).slice(0, 10) : it.due_date ?? null,
-              tags: parseTagsCsv(it.tags_text),
-              today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
-            }))
-          );
-
+          setItems(rows.map((it) => ({
+            ...it,
+            due_date: it.due_at ? String(it.due_at).slice(0, 10) : it.due_date ?? null,
+            tags: parseTagsCsv(it.tags_text),
+            today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
+          })));
           if (drId) {
             try {
               const rep = await getReport(drId);
@@ -224,9 +202,7 @@ export default function TodayStart({ onEmptyInbox }) {
                 setReport(rep);
                 setTimeInput(hhmmFromISOJST(rep?.period_start_at) || "");
               }
-            } catch (e) {
-              console.warn(e);
-            }
+            } catch (e) { console.warn(e); }
           }
           if (rows.length === 0 && onEmptyInbox) onEmptyInbox();
         }
@@ -237,9 +213,7 @@ export default function TodayStart({ onEmptyInbox }) {
         if (mounted) setLoading(false);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [kindTab, onEmptyInbox]);
 
   // ===== 日付表示（JST） =====
@@ -269,7 +243,6 @@ export default function TodayStart({ onEmptyInbox }) {
       ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)
         ? ymd
         : (isoToYmdSlashJST(report?.period_start_at) || "").replaceAll("/", "-");
-
     if (!datePart) return;
 
     const iso = `${datePart}T${timeInput}:00+09:00`;
@@ -277,78 +250,37 @@ export default function TodayStart({ onEmptyInbox }) {
     setSaving(true);
     const prev = report;
     setReport((r) => (r ? { ...r, period_start_at: iso } : r));
-    try {
-      await patchReport(dailyReportId, { period_start_at: iso });
-    } catch (err) {
-      console.error(err);
-      setReport(prev);
-      setError("開始時刻の更新に失敗しました。");
-    } finally {
-      setSaving(false);
-    }
+    try { await patchReport(dailyReportId, { period_start_at: iso }); }
+    catch (err) { console.error(err); setReport(prev); setError("開始時刻の更新に失敗しました。"); }
+    finally { setSaving(false); }
   }, [kindTab, dailyReportId, timeInput, report]);
 
-  const onKeyDownTime = useCallback(
-    (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        saveStartTime();
-      }
-    },
-    [saveStartTime]
-  );
+  const onKeyDownTime = useCallback((e) => {
+    if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); saveStartTime(); }
+  }, [saveStartTime]);
 
-  // 新規テンプレ作成用に編集モーダル
+  // 新規テンプレ作成用ドラフト
   function onCreateTemplate() {
-    // まだDB未登録の「新規テンプレ候補」を作って編集モーダルを開く
     const draft = {
-      id: null,                // ← これで「新規」を判定
-      title: "新規テンプレート",
-      priority: 3,
-      todo_flag: false,
-      kind: "TEMPLATE",
-      unit: "分",              // ★ 初期値
-      // 以下、編集モーダル初期値用に空を明示
-      due_at: null,
-      plan_start_at: null,
-      plan_end_at: null,
-      category: "",
-      tags: [],
-      description: "",
-      target_amount: "",
-      remaining_amount: "",
+      id: null, title: "新規テンプレート", priority: 3, todo_flag: false, kind: "TEMPLATE", unit: "分",
+      due_at: null, plan_start_at: null, plan_end_at: null, category: "", tags: [], description: "",
+      target_amount: "", remaining_amount: "",
     };
     setEditing(draft);
   }
-
-  // 新規 normal 作成用（DB未登録のドラフトを開く）
+  // 新規 normal 作成用ドラフト
   function onCreateNormal() {
     const draft = {
-      id: null,              // 新規判定
-      title: "新規アイテム",
-      priority: 3,
-      todo_flag: false,
-      kind: "NORMAL",
-      unit: "分",            // 初期値は必要なら空でもOK（テンプレと合わせて「分」に）
-      // 編集モーダル用の初期値
-      due_at: null,
-      plan_start_at: null,
-      plan_end_at: null,
-      category: "",
-      tags: [],
-      description: "",
-      target_amount: "",
-      remaining_amount: "",
+      id: null, title: "新規アイテム", priority: 3, todo_flag: false, kind: "NORMAL", unit: "分",
+      due_at: null, plan_start_at: null, plan_end_at: null, category: "", tags: [], description: "",
+      target_amount: "", remaining_amount: "",
+      today_flag: true, // 追加直後から今日に入れる前提の初期値
     };
     setEditing(draft);
   }
-
   const handleCreateNew = useCallback(() => {
-    if (kindTab === "template") onCreateTemplate();
-    else onCreateNormal();
+    if (kindTab === "template") onCreateTemplate(); else onCreateNormal();
   }, [kindTab]);
-
 
   // ===== items の更新系 =====
   async function patchItemDailyReport(itemId, nextDrId) {
@@ -358,23 +290,20 @@ export default function TodayStart({ onEmptyInbox }) {
       it.id === itemId ? { ...it, daily_report_id: nextDrId, today_flag: nextToday } : it
     );
     setItems(next);
-    try {
-      await patchItem(itemId, { daily_report_id: nextDrId, today_flag: nextToday });
-    } catch {
+    try { await patchItem(itemId, { daily_report_id: nextDrId, today_flag: nextToday }); }
+    catch {
       setItems(prev);
       try {
         const payload = await getDayStart();
         const drId = payload?.daily_report_id ?? null;
         const rows = Array.isArray(payload?.items) ? payload.items : [];
         setDailyReportId(drId);
-        setItems(
-          rows.map((it) => ({
-            ...it,
-            due_date: it.due_at ? String(it.due_at).slice(0, 10) : it.due_date ?? null,
-            tags: parseTagsCsv(it.tags_text),
-            today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
-          }))
-        );
+        setItems(rows.map((it) => ({
+          ...it,
+          due_date: it.due_at ? String(it.due_at).slice(0, 10) : it.due_date ?? null,
+          tags: parseTagsCsv(it.tags_text),
+          today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
+        })));
       } catch {}
       setError("一部の更新に失敗しました。もう一度お試しください。");
     }
@@ -383,11 +312,8 @@ export default function TodayStart({ onEmptyInbox }) {
     if (kindTab !== "normal") return;
     if (dailyReportId == null) return;
     const checked = item.daily_report_id === dailyReportId;
-    try {
-      await patchItemDailyReport(item.id, checked ? null : dailyReportId);
-    } catch {
-      setError("更新に失敗しました。");
-    }
+    try { await patchItemDailyReport(item.id, checked ? null : dailyReportId); }
+    catch { setError("更新に失敗しました。"); }
   }
   async function clearAll() {
     if (kindTab !== "normal") return;
@@ -411,18 +337,8 @@ export default function TodayStart({ onEmptyInbox }) {
   async function addFromTemplate(tplId) {
     try {
       await addTemplateToToday(tplId);
-      // normal に切り替えて今日リストを再取得（好みでテンプレートのままでもOK）
-      setKindTab("normal");
-      const payload = await getDayStart();
-      const drId = payload?.daily_report_id ?? null;
-      const rows = Array.isArray(payload?.items) ? payload.items : [];
-      setDailyReportId(drId);
-      setItems(rows.map((it) => ({
-        ...it,
-        due_date: it.due_at ? String(it.due_at).slice(0,10) : it.due_date ?? null,
-        tags: parseTagsCsv(it.tags_text),
-        today_flag: it.daily_report_id === drId ? true : !!it.today_flag,
-      })));
+      // ← タブは切り替えずテンプレートのまま維持
+      showToast("今日に追加しました");
     } catch (e) {
       console.error(e);
       setError("テンプレートからの追加に失敗しました。");
@@ -437,32 +353,23 @@ export default function TodayStart({ onEmptyInbox }) {
 
   const tagCounts = useMemo(() => {
     const m = new Map();
-    for (const it of visibleForFilter) for (const t of it.tags || []) {
-      m.set(t, (m.get(t) || 0) + 1);
-    }
+    for (const it of visibleForFilter) for (const t of it.tags || []) m.set(t, (m.get(t) || 0) + 1);
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [visibleForFilter]);
 
   const categoryCounts = useMemo(() => {
     const m = new Map();
-    for (const it of visibleForFilter) {
-      if (it.category) m.set(it.category, (m.get(it.category) || 0) + 1);
-    }
+    for (const it of visibleForFilter) if (it.category) m.set(it.category, (m.get(it.category) || 0) + 1);
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [visibleForFilter]);
 
   const onToggleTag = (t) => {
     setPersistedTags((arr) => {
-      const set = new Set(arr || []);
-      set.has(t) ? set.delete(t) : set.add(t);
-      return Array.from(set);
+      const set = new Set(arr || []); set.has(t) ? set.delete(t) : set.add(t); return Array.from(set);
     });
   };
   const onSelectCategory = (cOrNull) => setCategoryFilter(cOrNull);
-  const onClearFilters = () => {
-    setPersistedTags([]);
-    setCategoryFilter(null);
-  };
+  const onClearFilters = () => { setPersistedTags([]); setCategoryFilter(null); };
 
   const filtered = useMemo(() => {
     return items.filter((it) => {
@@ -485,84 +392,65 @@ export default function TodayStart({ onEmptyInbox }) {
   }, [filtered, kindTab]);
 
   const selectedCount = useMemo(
-    () =>
-      kindTab === "normal"
-        ? items.filter((i) => i.daily_report_id === dailyReportId).length
-        : 0,
+    () => (kindTab === "normal" ? items.filter((i) => i.daily_report_id === dailyReportId).length : 0),
     [items, dailyReportId, kindTab]
   );
 
   // ===== 編集保存 =====
- async function saveEdit(values) {
-   try {
-     // ★ // ★ 新規テンプレート作成（id が null/undefined かつ kind=TEMPLATE）
-     if (values.id == null && (values.kind === "TEMPLATE" || kindTab === "template")) {
-       const created = await createTemplate({
-         title: values.title,
-         description: values.description ?? null,
-         priority: values.priority,
-         // 期限
-         due_at: values.no_due ? null : (values.due_at || null),
-         // 予定
-         plan_start_at: values.plan_start_at || null,
-         plan_end_at: values.plan_end_at || null,
-         // メタ
-         category: values.category ?? null,
-         unit: values.unit || "分",
-         target_amount: numOrNull(values.target_amount),
-         remaining_amount: numOrNull(values.remaining_amount),
-         todo_flag: !!values.todo_flag,
-         // バックエンドは tags_text で受けるので渡す
-         tags_text: (values.tags || []).join(","),
-       });
-       // リスト先頭に追加して閉じる
-       setItems((arr) => [created, ...arr]);
-       closeModal();
-       return;
-     }
-    // ★ 新規 normal 作成（id が null/undefined かつ normal タブ）
-    if (values.id == null && (values.kind === "NORMAL" || kindTab === "normal")) {
-      const created = await createItem({
-        title: values.title,
-        description: values.description ?? null,
-        priority: values.priority,
-        // 締切・予定
-        due_at: values.no_due ? null : (values.due_at || null),
-        plan_start_at: values.plan_start_at || null,
-        plan_end_at: values.plan_end_at || null,
-        // メタ
-        category: values.category ?? null,
-        unit: values.unit || null,
-        target_amount: numOrNull(values.target_amount),
-        remaining_amount: numOrNull(values.remaining_amount),
-        tags_text: (values.tags || []).join(","),
-        // kind と TODO型
-        kind: "NORMAL",
-        todo_flag: !!values.todo_flag,
-        // ← ここを「必ず含める」+ DRID も連動
-        today_flag: values.today_flag === true ? true : false,
-        daily_report_id: values.today_flag === true ? (dailyReportId ?? null) : null,
-
-      });
-
-      // 画面にもサーバの戻り値（or 入力値）を忠実に反映
-      setItems((arr) => [
-        {
+  async function saveEdit(values) {
+    try {
+      // 新規テンプレ作成
+      if (values.id == null && (values.kind === "TEMPLATE" || kindTab === "template")) {
+        const created = await createTemplate({
+          title: values.title,
+          description: values.description ?? null,
+          priority: values.priority,
+          due_at: values.no_due ? null : (values.due_at || null),
+          plan_start_at: values.plan_start_at || null,
+          plan_end_at: values.plan_end_at || null,
+          category: values.category ?? null,
+          unit: values.unit || "分",
+          target_amount: numOrNull(values.target_amount),
+          remaining_amount: numOrNull(values.remaining_amount),
+          todo_flag: !!values.todo_flag,
+          tags_text: (values.tags || []).join(","),
+        });
+        setItems((arr) => [created, ...arr]);
+        closeModal();
+        return;
+      }
+      // 新規 normal 作成
+      if (values.id == null && (values.kind === "NORMAL" || kindTab === "normal")) {
+        const created = await createItem({
+          title: values.title,
+          description: values.description ?? null,
+          priority: values.priority,
+          due_at: values.no_due ? null : (values.due_at || null),
+          plan_start_at: values.plan_start_at || null,
+          plan_end_at: values.plan_end_at || null,
+          category: values.category ?? null,
+          unit: values.unit || null,
+          target_amount: numOrNull(values.target_amount),
+          remaining_amount: numOrNull(values.remaining_amount),
+          tags_text: (values.tags || []).join(","),
+          kind: "NORMAL",
+          todo_flag: !!values.todo_flag,
+          today_flag: values.today_flag === true ? true : false,
+          daily_report_id: values.today_flag === true ? (dailyReportId ?? null) : null,
+        });
+        setItems((arr) => [{
           ...created,
           tags: parseTagsCsv(created.tags_text),
           today_flag: created.today_flag ?? (values.today_flag === true),
-          daily_report_id:
-            created.daily_report_id ??
-            (values.today_flag === true ? (dailyReportId ?? null) : null),
-        },
-        ...arr,
-      ]);
-      closeModal();
-      return;
-    }
+          daily_report_id: created.daily_report_id ?? (values.today_flag === true ? (dailyReportId ?? null) : null),
+        }, ...arr]);
+        closeModal();
+        showToast("今日に追加しました");
+        return;
+      }
 
-     // 既存テンプレ or normal の更新（従来通り）
-     await patchItem(values.id, {
+      // 既存更新
+      await patchItem(values.id, {
         title: values.title,
         due_at: values.no_due ? null : values.due_at || null,
         priority: values.priority,
@@ -574,9 +462,8 @@ export default function TodayStart({ onEmptyInbox }) {
         plan_end_at: values.plan_end_at || null,
         target_amount: numOrNull(values.target_amount),
         remaining_amount: numOrNull(values.remaining_amount),
-        unit: (values.unit || "分"), // 単位が空なら「分」
+        unit: (values.unit || "分"),
       });
-
       setItems((arr) =>
         arr.map((x) =>
           x.id === values.id
@@ -615,11 +502,9 @@ export default function TodayStart({ onEmptyInbox }) {
       </div>
     );
 
-  // アクティブタブを塗りつぶしで強調
   const tabBtnClass = (k) =>
     "px-3 py-1 rounded-full border text-sm transition-colors " +
-    (kindTab === k ? "bg-black text-white border-black font-semibold"
-                   : "bg-white text-gray-900");
+    (kindTab === k ? "bg-black text-white border-black font-semibold" : "bg-white text-gray-900");
 
   const chipClass = (active) =>
     "px-2 py-1 rounded-full border text-sm shrink-0 transition-colors " +
@@ -668,31 +553,15 @@ export default function TodayStart({ onEmptyInbox }) {
 
       {/* タブ行 */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          className={`px-3 py-2 rounded-2xl ${kindTab==='normal' ? 'bg-black text-white' : 'bg-gray-100'}`}
-          onClick={()=>setKindTab('normal')}
-        >normal</button>
-        <button
-          className={`px-3 py-2 rounded-2xl ${kindTab==='template' ? 'bg-black text-white' : 'bg-gray-100'}`}
-          onClick={()=>setKindTab('template')}
-        >テンプレート</button>
-        <button
-          className={`px-3 py-2 rounded-2xl ${kindTab==='repeat' ? 'bg-black text-white' : 'bg-gray-100'}`}
-          onClick={()=>setKindTab('repeat')}
-        >繰り返し項目</button>
+        <button className={`px-3 py-2 rounded-2xl ${kindTab==='normal' ? 'bg-black text-white' : 'bg-gray-100'}`} onClick={()=>setKindTab('normal')}>normal</button>
+        <button className={`px-3 py-2 rounded-2xl ${kindTab==='template' ? 'bg-black text-white' : 'bg-gray-100'}`} onClick={()=>setKindTab('template')}>テンプレート</button>
+        <button className={`px-3 py-2 rounded-2xl ${kindTab==='repeat' ? 'bg-black text-white' : 'bg-gray-100'}`} onClick={()=>setKindTab('repeat')}>繰り返し項目</button>
       </div>
 
-      {/* 選択件数 + 新規ボタンを下段に移動 */}
+      {/* 選択件数 + 新規ボタン */}
       <div className="mt-2 flex items-center justify-between">
-        {selectedCount > 0 && (
-          <span className="text-sm text-gray-600">選択 {selectedCount}件</span>
-        )}
-        <button
-          className="px-4 py-2 rounded-lg bg-emerald-600 text-white"
-          onClick={handleCreateNew}
-        >
-          新規
-        </button>
+        {selectedCount > 0 && <span className="text-sm text-gray-600">選択 {selectedCount}件</span>}
+        <button className="px-4 py-2 rounded-lg bg-emerald-600 text-white" onClick={handleCreateNew}>新規</button>
       </div>
 
       {/* インライン・フィルタ */}
@@ -707,41 +576,29 @@ export default function TodayStart({ onEmptyInbox }) {
             ))}
           </div>
         )}
-
         {categoryCounts.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-muted-foreground">カテゴリ:</span>
             {categoryCounts.map(([c, cnt]) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => onSelectCategory(categoryFilter === c ? null : c)}
-                className={chipClass(categoryFilter === c)}
-              >
+              <button key={c} type="button" onClick={() => onSelectCategory(categoryFilter === c ? null : c)} className={chipClass(categoryFilter === c)}>
                 {c} <span className="opacity-60">({cnt})</span>
               </button>
             ))}
           </div>
         )}
-
-        {(tagCounts.length > 0 || categoryCounts.length > 0) &&
-          (persistedTags.length > 0 || categoryFilter) && (
-            <button className="ml-auto text-xs text-blue-600 underline hover:no-underline" onClick={onClearFilters}>
-              クリア
-            </button>
-          )}
+        {(tagCounts.length > 0 || categoryCounts.length > 0) && (persistedTags.length > 0 || categoryFilter) && (
+          <button className="ml-auto text-xs text-blue-600 underline hover:no-underline" onClick={onClearFilters}>クリア</button>
+        )}
       </div>
 
       {/* 操作バー（normalのみ） */}
       {kindTab === "normal" && (
         <div className="flex gap-2">
-          <button className="px-3 py-1 rounded border" onClick={clearAll}>
-            選択解除
-          </button>
+          <button className="px-3 py-1 rounded border" onClick={clearAll}>選択解除</button>
         </div>
       )}
 
-      {/* 本体リスト（スマホ=縦積み／sm+=右端に操作） */}
+      {/* 本体リスト */}
       <ul className="divide-y border rounded">
         {sorted.map((i) => {
           const checked  = kindTab === "normal" ? i.daily_report_id === dailyReportId : false;
@@ -749,18 +606,16 @@ export default function TodayStart({ onEmptyInbox }) {
           const isDone   = String(i.status || "").toUpperCase() === "DONE";
           const todoKind = isTodoKind(i);
 
-          /* ===== テンプレート表示を省スペース版に ===== */
+          /* ===== テンプレート表示（省スペース） ===== */
           if (kindTab === "template") {
             return (
               <li key={i.id} className="p-2 sm:p-2">
-                {/* 1段目：タイトル1行（右端に簡易バッジ） */}
-                <div className="flex items-baseline gap-2">
-                  <div className="font-medium text-base leading-tight truncate flex-1">
-                    {i.title}
-                  </div>
+                {/* 1段目：TODOバッジ → タイトル（インライン） */}
+                <div className="flex items-center gap-2 min-w-0">
                   {i.todo_flag && (
                     <span className="text-[10px] text-white bg-slate-500 rounded px-1 py-0.5 shrink-0">TODO</span>
                   )}
+                  <div className="font-medium text-base leading-tight truncate flex-1">{i.title}</div>
                 </div>
 
                 {/* 2段目：操作群（右寄せ） */}
@@ -768,14 +623,11 @@ export default function TodayStart({ onEmptyInbox }) {
                   <button
                     className="h-8 px-3 text-xs rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
                     onClick={(e) => { e.stopPropagation(); addFromTemplate(i.id); }}
-                  >
-                    今日に追加
-                  </button>
+                  >今日に追加</button>
                   <button
                     className="h-8 w-8 grid place-items-center rounded border hover:bg-gray-50"
                     onClick={(e) => { e.stopPropagation(); setEditing(i); }}
-                    title="編集"
-                    aria-label="編集"
+                    title="編集" aria-label="編集"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
                       <path d="M13.586 3a2 2 0 0 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zM12.379 5.207 3 14.586V18h3.414l9.379-9.379-3.414-3.414z"/>
@@ -784,15 +636,13 @@ export default function TodayStart({ onEmptyInbox }) {
                   <button
                     className="h-8 px-3 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
                     onClick={(e) => { e.stopPropagation(); removeItem(i.id); }}
-                  >
-                    削除
-                  </button>
+                  >削除</button>
                 </div>
               </li>
             );
           }
 
-          /* ===== ここから通常(NORMAL)表示は既存のまま ===== */
+          /* ===== normal 表示 ===== */
           return (
             <li
               key={i.id}
@@ -812,15 +662,17 @@ export default function TodayStart({ onEmptyInbox }) {
                   className="mt-1"
                 />
 
-                {/* 中: タイトル＋メタ */}
+                {/* 中: TODOバッジ → タイトル（インライン）＋ メタ */}
                 <div className={`min-w-0 ${todoKind && isDone ? "opacity-60 line-through" : ""}`}>
-                  <div className="font-medium text-base leading-snug break-words">
-                    {i.title}
+                  <div className="font-medium text-base leading-snug break-words flex items-center gap-2 min-w-0">
+                    {todoKind && (
+                      <span className="text-[10px] text-white bg-slate-500 rounded px-1 py-0.5 shrink-0">TODO</span>
+                    )}
+                    <span className="truncate">{i.title}</span>
                   </div>
                   <div className="mt-1 text-xs text-gray-500 flex flex-wrap items-center gap-2">
                     {i.priority && <span className="hidden sm:inline text-yellow-500">{"★".repeat(i.priority)}</span>}
                     {overdue && <span className="px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>}
-                    {todoKind && <span className="text-[10px] text-white bg-slate-500 rounded px-1 py-0.5">TODO</span>}
                     {(i.due_at || i.due_date) && (
                       <span className="text-muted-foreground">
                         {i.due_at ? `期限: ${fmtLocal(i.due_at)}` : `期限: ${i.due_date} 00:00`}
@@ -844,10 +696,8 @@ export default function TodayStart({ onEmptyInbox }) {
                       <span>完了</span>
                     </label>
                   )}
-                  <button className="px-2 py-1 text-xs rounded border hover:bg-gray-50"
-                          onClick={(e) => { e.stopPropagation(); setEditing(i); }}>編集</button>
-                  <button className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
-                          onClick={(e) => { e.stopPropagation(); removeItem(i.id); }}>削除</button>
+                  <button className="px-2 py-1 text-xs rounded border hover:bg-gray-50" onClick={(e) => { e.stopPropagation(); setEditing(i); }}>編集</button>
+                  <button className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); removeItem(i.id); }}>削除</button>
                 </div>
               </div>
             </li>
@@ -855,35 +705,19 @@ export default function TodayStart({ onEmptyInbox }) {
         })}
       </ul>
 
-
       {editing && (
         <EditItemModal
           item={editing}
           onCancel={closeModal}
           onSave={saveEdit}
-          onDelete={async (id) => {
-            try {
-              await removeItem(id); // 既存の削除関数を流用
-            } finally {
-              closeModal();
-            }
-          }}
+          onDelete={async (id) => { try { await removeItem(id); } finally { closeModal(); } }}
           defaultUnit="分"
         />
       )}
+
+      {toastNode}
     </div>
   );
-}
-
-/* ====== 編集モーダル ====== */
-/* ===== モーダル表示中は背景スクロールを止める小フック ===== */
-function useLockBodyScroll(active) {
-  useEffect(() => {
-    if (!active) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, [active]);
 }
 
 /* ---------- 小物 ---------- */
