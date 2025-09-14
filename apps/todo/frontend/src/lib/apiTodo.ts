@@ -1,18 +1,36 @@
 // sensor-server/apps/todo/frontend/src/lib/apiTodo.ts
 
 import { fetchJson } from "@/auth";
-
+console.info("[apiTodo.ts] LOADED (this is the one you edited)");
 /* ========================== Types =========================== */
 export type ItemStatus = "INBOX" | "DOING" | "PAUSED" | "DONE";
 export type ItemType = "normal" | "template" | "repeat_rule";
+export type ItemKind = "NORMAL" | "TEMPLATE" | "REPEAT";
+
+// 繰り返し仕様
+export type RepeatAfterUnit = "hour" | "day" | "week" | "month";
+export interface RepeatRule {
+  type: "none" | "daily" | "weekly" | "monthly" | "yearly" | "after";
+  interval?: number;
+  weekdays?: Array<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun">;
+  monthly?: {
+    mode: "day" | "nth";
+    day?: number;
+    nth?: number;
+    weekday?: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+  };
+  yearly?: { month: number; day: number };
+  after?: { amount: number; unit: RepeatAfterUnit };
+  generate?: { policy: "immediate" | "on_due" | "before"; advance_days?: number };
+}
 
 export interface Item {
   id: number;
   title: string;
   description?: string | null;
   status: ItemStatus;
-  priority?: number | null;     // 1..5（小さいほど高）
-  due_at?: string | null;       // ISO
+  priority?: number | null; // 1..5（小さいほど高）
+  due_at?: string | null; // ISO
   plan_start_at?: string | null;
   plan_end_at?: string | null;
   unit?: string | null;
@@ -25,10 +43,14 @@ export interface Item {
   updated_at?: string;
 
   // v1.7 追加
-  item_type?: ItemType;             // normal / template / repeat_rule
-  todo_flag?: boolean;              // true=時間管理なし TODO
-  default_todo_flag?: boolean;      // template/repeat_rule 用
-  default_today_flag?: boolean;     // template/repeat_rule 用
+  item_type?: ItemType; // normal / template / repeat_rule
+  todo_flag?: boolean; // true=時間管理なし TODO
+  default_todo_flag?: boolean; // template/repeat_rule 用
+  default_today_flag?: boolean; // template/repeat_rule 用
+
+  // v1.8〜 繰り返し対応
+  kind?: ItemKind;
+  repeat?: RepeatRule;
 }
 
 export interface DayStartResponse {
@@ -38,9 +60,9 @@ export interface DayStartResponse {
 
 export interface DailyReport {
   id: number;
-  report_date: string;              // "YYYY-MM-DD"（JST日付）
-  period_start_at?: string | null;  // ISO（+09:00）
-  period_end_at?: string | null;    // ISO（+09:00）
+  report_date: string; // "YYYY-MM-DD"（JST日付）
+  period_start_at?: string | null; // ISO（+09:00）
+  period_end_at?: string | null; // ISO（+09:00）
   created_at?: string;
   updated_at?: string;
 }
@@ -49,7 +71,10 @@ export interface DailyReport {
 const BASE = "/api/todo";
 
 // fetchJson は JSON を返す約束のユーティリティ
-async function req<T>(path: string, init?: RequestInit & { body?: any; json?: any }): Promise<T> {
+async function req<T>(
+  path: string,
+  init?: RequestInit & { body?: any; json?: any }
+): Promise<T> {
   const url = `${BASE}${path}`;
   let opts: any = init ?? {};
   if (opts.json !== undefined) {
@@ -90,7 +115,7 @@ export async function patchItem(id: number, body: Partial<Item>): Promise<Item> 
   return await req<Item>(`/items/${id}`, { method: "PATCH", json: body });
 }
 
-// ★ normal の新規作成
+// ★ normal/repeat/template の新規作成
 export async function createItem(body: Partial<Item>): Promise<Item> {
   return await req<Item>(`/items`, { method: "POST", json: body });
 }

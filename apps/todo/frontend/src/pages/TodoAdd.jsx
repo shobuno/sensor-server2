@@ -9,17 +9,19 @@ export default function TodoAdd({ editId, onCreated }) {
   const location = useLocation();
   const isEdit = useMemo(() => !!editId, [editId]);
 
-  // URLクエリで ?kind=template を見る（新規時の初期値用）
   const params = new URLSearchParams(location.search);
-  const queryWantsTemplate = params.get("kind") === "template";
+  const queryKind = params.get("kind"); // "template" / "repeat" / null
 
   const dateRef = useRef(null);
   const timeRef = useRef(null);
 
   const initialForm = () => ({
-    // 保存先（NORMAL/TEMPLATE）
-    save_as_template: queryWantsTemplate,      // 新規: ?kind=template なら true
-    // 入力
+    item_type:
+      queryKind === "template"
+        ? "TEMPLATE"
+        : queryKind === "repeat"
+        ? "REPEAT"
+        : "NORMAL",
     title: "",
     note: "",
     due_date: "",
@@ -31,13 +33,9 @@ export default function TodoAdd({ editId, onCreated }) {
     unit: "分",
     target_amount: "",
     remaining_amount: "",
-    // TODO型
-    todo_flag: true,                            // 既定: ON
-    // 今日に入れる（テンプレ時は非表示）
-    pin_today: !queryWantsTemplate,             // テンプレ新規なら false
-    // 繰り返し
+    todo_flag: true,
+    pin_today: queryKind ? false : true,
     repeat: { type: "none", interval: 1, weekdays: [], yearly: { month: "", day: "" } },
-    // 予定開始/終了
     plan_start_local: "",
     plan_end_local: "",
     no_plan_start: true,
@@ -48,16 +46,16 @@ export default function TodoAdd({ editId, onCreated }) {
   const on = (k, v) => setForm((s) => ({ ...s, [k]: v }));
   const resetForm = () => setForm(initialForm());
 
-  // ===== 編集ロード =====
+  /* ===== 編集ロード ===== */
   useEffect(() => {
     if (!isEdit) { resetForm(); return; }
-
     let alive = true;
     (async () => {
       try {
         const data = await fetchJson(`/api/todo/items/${editId}`);
-        const s = data.due_at ? String(data.due_at) : null;
+        if (!alive) return;
 
+        const s = data.due_at ? String(data.due_at) : null;
         let due_date = "", due_time = "", no_due = false;
         if (s) {
           if (/[zZ]|[+\-]\d\d:?\d\d$/.test(s)) {
@@ -75,13 +73,10 @@ export default function TodoAdd({ editId, onCreated }) {
 
         const plan_start_local = isoToLocalInput(data.plan_start_at);
         const plan_end_local   = isoToLocalInput(data.plan_end_at);
-        const no_plan_start = !data.plan_start_at;
-        const no_plan_end   = !data.plan_end_at;
 
-        if (!alive) return;
         setForm((st) => ({
           ...st,
-          save_as_template: String(data.kind).toUpperCase() === "TEMPLATE",
+          item_type: String(data.item_type || "NORMAL").toUpperCase(),
           title: data.title || "",
           note: data.description || "",
           due_date,
@@ -94,23 +89,21 @@ export default function TodoAdd({ editId, onCreated }) {
           target_amount: data.target_amount ?? "",
           remaining_amount: data.remaining_amount ?? "",
           todo_flag: !!data.todo_flag,
-          // 予定
           plan_start_local,
           plan_end_local,
-          no_plan_start,
-          no_plan_end,
-          // pin_today は編集では意味が薄いので常に false に寄せる
+          no_plan_start: !data.plan_start_at,
+          no_plan_end: !data.plan_end_at,
           pin_today: false,
+          repeat: data.repeat || { type: "none", interval: 1, weekdays: [], yearly: { month: "", day: "" } },
         }));
-      } catch (_) {
+      } catch {
         nav("/todo/today", { replace: true });
       }
     })();
-
     return () => { alive = false; resetForm(); };
   }, [isEdit, editId, location.key, nav]);
 
-  // ===== 当日レポートIDの取得（なければ生成） =====
+  /* ===== 当日レポートIDの取得 ===== */
   async function getOrCreateTodayReportId() {
     try {
       const rep = await fetchJson("/api/todo/daily-reports/today");
@@ -120,7 +113,7 @@ export default function TodoAdd({ editId, onCreated }) {
     }
   }
 
-  // ===== 送信 =====
+  /* ===== 送信 ===== */
   const onSubmit = async () => {
     const baseTitle = (form.title || "").trim();
     if (!baseTitle) { alert("タイトルを入力してください"); return; }
@@ -137,7 +130,6 @@ export default function TodoAdd({ editId, onCreated }) {
     const plan_start_at = form.no_plan_start ? null : localInputToIso(form.plan_start_local);
     const plan_end_at   = form.no_plan_end   ? null : localInputToIso(form.plan_end_local);
 
-    // ここが重要：kind と todo_flag を常に送る
     const payloadBase = {
       title: baseTitle,
       description: (form.note || "").trim() || null,
@@ -149,11 +141,11 @@ export default function TodoAdd({ editId, onCreated }) {
       remaining_amount: remaining,
       plan_start_at,
       plan_end_at,
-      kind: form.save_as_template ? "TEMPLATE" : "NORMAL",
+      item_type: form.item_type || "NORMAL",
       todo_flag: !!form.todo_flag,
+      repeat: form.repeat,
     };
 
-    // 期限
     if (form.no_due) {
       payloadBase.due_at = null;
     } else if (form.due_date) {
@@ -169,18 +161,14 @@ export default function TodoAdd({ editId, onCreated }) {
           body: JSON.stringify(payloadBase),
         });
         alert("編集を保存しました");
-        // 編集対象がテンプレなら一覧へ、通常なら今日へ
-        if (form.save_as_template) nav("/todo/templates");
-        else nav("/todo/today");
+        nav("/todo/today");
       } else {
         const body = {
           ...payloadBase,
           remaining_amount: remaining === null ? target : remaining,
-          repeat: form.repeat,
         };
 
-        // テンプレ保存中は pin_today/daily_report_id を付けない
-        if (!form.save_as_template && form.pin_today) {
+        if (form.item_type === "NORMAL" && form.pin_today) {
           const reportId = await getOrCreateTodayReportId();
           if (reportId) body.daily_report_id = reportId;
         }
@@ -192,8 +180,10 @@ export default function TodoAdd({ editId, onCreated }) {
 
         resetForm();
         alert("追加しました");
-        if (form.save_as_template) {
+        if (form.item_type === "TEMPLATE") {
           nav("/todo/templates");
+        } else if (form.item_type === "REPEAT") {
+          nav("/todo/repeats");
         } else {
           onCreated?.();
         }
@@ -203,35 +193,19 @@ export default function TodoAdd({ editId, onCreated }) {
     }
   };
 
-  // ===== 期限クイック =====
-  const clearDue = () => {
-    on("no_due", true); on("due_date", ""); on("due_time", "");
-    dateRef.current?.blur(); timeRef.current?.blur();
-  };
-  const setTimeQuick = (hhmm) => {
-    if (!form.due_date) on("due_date", todayLocal());
-    on("no_due", false);
-    on("due_time", hhmm);
-    timeRef.current?.focus();
-  };
+  /* ===== 期限クイック ===== */
+  const clearDue = () => { on("no_due", true); on("due_date", ""); on("due_time", ""); dateRef.current?.blur(); timeRef.current?.blur(); };
+  const setTimeQuick = (hhmm) => { if (!form.due_date) on("due_date", todayLocal()); on("no_due", false); on("due_time", hhmm); timeRef.current?.focus(); };
 
   return (
     <div className="px-2 py-3 sm:px-3 md:p-4 max-w-3xl mx-auto space-y-4">
       <div className="flex items-center gap-3">
-        <h1 className="text-xl font-bold">{isEdit ? "やることを編集" : "やることを追加"}</h1>
-        <label className="ml-auto inline-flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="checkbox"
-            checked={form.save_as_template}
-            onChange={(e) => {
-              const v = e.target.checked;
-              on("save_as_template", v);
-              if (v) on("pin_today", false);
-            }}
-          />
-          <span>テンプレートとして保存</span>
-        </label>
+        <h1 className="text-xl font-bold">
+          {isEdit ? "やることを編集" :
+            form.item_type === "TEMPLATE" ? "テンプレートを追加" :
+            form.item_type === "REPEAT" ? "繰り返し項目を追加" :
+            "やることを追加"}
+        </h1>
       </div>
 
       {/* 基本情報 */}
@@ -248,15 +222,11 @@ export default function TodoAdd({ editId, onCreated }) {
       <div className="rounded-2xl border p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
         <L label="期限">
           <div className="flex items-center gap-2 flex-wrap">
-            <input ref={dateRef} type="date" className="input w-[180px] shrink-0" style={{ fontVariantNumeric: "tabular-nums" }}
-              value={form.due_date} onChange={(e) => { on("due_date", e.target.value); on("no_due", false); }} disabled={form.no_due} />
-            <input ref={timeRef} type="time" className="input w-[120px] shrink-0" style={{ fontVariantNumeric: "tabular-nums" }}
-              value={form.due_time} onChange={(e) => { on("due_time", e.target.value); on("no_due", false); }} step={60} disabled={form.no_due} />
-            <div className="flex items-center gap-2">
-              <button type="button" className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700" onClick={() => setTimeQuick("00:00")} disabled={form.no_due}>0:00</button>
-              <button type="button" className="px-3 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700" onClick={() => setTimeQuick("23:59")} disabled={form.no_due}>23:59</button>
-              <button type="button" className="px-3 py-1 rounded-md bg-gray-200 hover:bg-gray-300 text-gray-700" onClick={clearDue}>×</button>
-            </div>
+            <input ref={dateRef} type="date" className="input w-[180px]" value={form.due_date}
+              onChange={(e) => { on("due_date", e.target.value); on("no_due", false); }} disabled={form.no_due} />
+            <input ref={timeRef} type="time" className="input w-[120px]" value={form.due_time}
+              onChange={(e) => { on("due_time", e.target.value); on("no_due", false); }} step={60} disabled={form.no_due} />
+            <button type="button" className="px-2 bg-gray-200" onClick={clearDue}>×</button>
           </div>
           <label className="mt-2 inline-flex items-center gap-2 select-none">
             <input type="checkbox" className="checkbox" checked={form.no_due}
@@ -275,79 +245,42 @@ export default function TodoAdd({ editId, onCreated }) {
           </select>
         </L>
 
-        <L label="タグ（カンマ/スペース区切り）">
-          <input className="input" placeholder="仕事, 家, 学習 など" value={form.tags} onChange={(e) => on("tags", e.target.value)} />
+        <L label="タグ">
+          <input className="input" placeholder="仕事, 家, 学習" value={form.tags} onChange={(e) => on("tags", e.target.value)} />
         </L>
       </div>
 
       {/* TODO型 / 予定開始・終了 */}
       <div className="rounded-2xl border p-4 space-y-3">
-        <label className="inline-flex items-center gap-2 select-none">
+        <label className="inline-flex items-center gap-2">
           <input type="checkbox" className="checkbox" checked={form.todo_flag} onChange={(e) => on("todo_flag", e.target.checked)} />
-          <span>TODO型（開始ボタンなし・チェックで完了）</span>
+          <span>TODO型（チェックのみ）</span>
         </label>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <L label="開始時刻（任意）">
-            <input type="datetime-local" className="input" style={{ fontVariantNumeric: "tabular-nums" }}
-              value={form.plan_start_local} onChange={(e) => { on("plan_start_local", e.target.value); on("no_plan_start", false); }}
-              step={60} disabled={form.no_plan_start} />
-            <label className="mt-2 inline-flex items-center gap-2 select-none">
-              <input type="checkbox" className="checkbox" checked={form.no_plan_start}
-                onChange={(e) => { const v = e.target.checked; on("no_plan_start", v); if (v) on("plan_start_local", ""); }} />
-              <span>開始なし</span>
-            </label>
-          </L>
-          <L label="終了時刻（任意）">
-            <input type="datetime-local" className="input" style={{ fontVariantNumeric: "tabular-nums" }}
-              value={form.plan_end_local} onChange={(e) => { on("plan_end_local", e.target.value); on("no_plan_end", false); }}
-              step={60} disabled={form.no_plan_end} />
-            <label className="mt-2 inline-flex items-center gap-2 select-none">
-              <input type="checkbox" className="checkbox" checked={form.no_plan_end}
-                onChange={(e) => { const v = e.target.checked; on("no_plan_end", v); if (v) on("plan_end_local", ""); }} />
-              <span>終了なし</span>
-            </label>
-          </L>
-        </div>
       </div>
 
       {/* 分類・予定/残り/単位 */}
       <div className="rounded-2xl border p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <L label="カテゴリ">
-          <input className="input" placeholder="カテゴリ（任意）" value={form.category} onChange={(e) => on("category", e.target.value)} />
-        </L>
+        <L label="カテゴリ"><input className="input" value={form.category} onChange={(e) => on("category", e.target.value)} /></L>
         <L label="予定 / 残り / 単位">
-          <div className="flex items-center gap-2 flex-wrap md:flex-nowrap md:gap-3">
-            <span className="whitespace-nowrap text-sm text-muted-foreground">予定</span>
-            <input className="input w-24 md:w-28" type="number" inputMode="decimal" placeholder="例) 30" value={form.target_amount} onChange={(e) => on("target_amount", e.target.value)} />
-            <span className="whitespace-nowrap text-sm text-muted-foreground">残り</span>
-            <input className="input w-24 md:w-28" type="number" inputMode="decimal" placeholder="例) 10" value={form.remaining_amount} onChange={(e) => on("remaining_amount", e.target.value)} />
-            <span className="whitespace-nowrap text-sm text-muted-foreground">単位</span>
-            <input className="input w-28 md:w-32" placeholder="分 / 件 / 冊 など" value={form.unit} onChange={(e) => on("unit", e.target.value)} />
+          <div className="flex gap-2">
+            <input className="input w-20" type="number" value={form.target_amount} onChange={(e) => on("target_amount", e.target.value)} />
+            <input className="input w-20" type="number" value={form.remaining_amount} onChange={(e) => on("remaining_amount", e.target.value)} />
+            <input className="input w-20" value={form.unit} onChange={(e) => on("unit", e.target.value)} />
           </div>
         </L>
-        <div aria-hidden />
       </div>
 
-      {/* 今日に入れる（テンプレ保存時は非表示） */}
-      {!isEdit && !form.save_as_template && (
+      {/* 繰り返し設定 */}
+      {form.item_type === "REPEAT" && (
         <div className="rounded-2xl border p-4">
-          <label className="inline-flex items-center gap-2">
-            <input id="pin_today" type="checkbox" className="checkbox" checked={form.pin_today} onChange={(e) => on("pin_today", e.target.checked)} />
-            <span className="select-none">今日に入れる</span>
-          </label>
+          <RepeatEditor value={form.repeat} onChange={(r) => on("repeat", r)} dueDate={form.due_date} />
         </div>
       )}
-
-      {/* 🔁 繰り返し */}
-      <div className="rounded-2xl border p-4 space-y-2">
-        <RepeatEditor value={form.repeat} onChange={(r) => on("repeat", r)} dueDate={form.due_date} />
-      </div>
 
       {/* アクション */}
       <div className="flex justify-end gap-2">
         {isEdit && (
-          <button type="button" className="btn-outline" onClick={() => nav(form.save_as_template ? "/todo/templates" : "/todo/today")}>
+          <button type="button" className="btn-outline" onClick={() => nav("/todo/today")}>
             キャンセル
           </button>
         )}
@@ -370,7 +303,7 @@ function L({ label, required = false, children }) {
   );
 }
 
-// ===== util =====
+/* ===== util ===== */
 function parseTags(str) {
   return Array.from(new Set((str || "").split(/[,、\s]+/).map((s) => s.trim()).filter(Boolean)));
 }
