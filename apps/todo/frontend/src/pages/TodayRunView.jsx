@@ -264,7 +264,7 @@ export default function TodayRunView() {
 
   // ===== 振り分け（通常 vs TODO） =====
   const normalCards = sorted.filter((it) => !isTodoKind(it));
-  const todoCards   = sorted.filter((it) =>  isTodoKind(it)); // ← タイポ修正済み
+  const todoCards   = sorted.filter((it) =>  isTodoKind(it));
 
   // ===== TODOの状態（上部メッセージ／リンク用） =====
   const todoHasAny   = todoCards.length > 0;
@@ -318,7 +318,6 @@ export default function TodayRunView() {
 
   /* ===== スクロール関数 ===== */
   const scrollToTop = () => {
-    // 画面の一番上まで
     try {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch {
@@ -326,7 +325,6 @@ export default function TodayRunView() {
     }
   };
   const scrollToTodo = () => {
-    // id 優先で取得（両レイアウトで同じ id を付与）
     const el = document.getElementById("todo-panel") || todoRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -338,6 +336,23 @@ export default function TodayRunView() {
     }
   };
 
+  // ===== 表示メッセージ（最大1件、優先順位：期限切れ→近い→あるだけ） =====
+  const { topMsg, topMsgClass } = useMemo(() => {
+    let msg = null;
+    let cls = "";
+    if (todoOverdue.length > 0) {
+      msg = "期限切れのTODOがあります";
+      cls = "text-red-600";
+    } else if (todoDueSoon.length > 0) {
+      msg = "期限が近いTODOがあります";
+      cls = "text-amber-600";
+    } else if (todoHasAny) {
+      msg = "TODOがあります";
+      cls = "text-blue-600";
+    }
+    return { topMsg: msg, topMsgClass: cls };
+  }, [todoOverdue.length, todoDueSoon.length, todoHasAny]);
+
   return (
     <div className="px-2 py-3 sm:px-1 md:p-4 max-w-6xl mx-auto">
       {/* ヘッダ */}
@@ -346,30 +361,22 @@ export default function TodayRunView() {
           <h2 className="text-lg font-bold">今日のタスク</h2>
 
           {/* ステータスメッセージ（PCは文字だけ／モバイルはリンクでスクロール） */}
-          <div className="text-sm text-muted-foreground">
-            <span className="hidden sm:inline">
-              {todoHasAny && `・TODOがあります（${todoCards.length}件）`}
-              {todoOverdue.length > 0 && `　・期限切れのTODOがあります（${todoOverdue.length}件）`}
-              {todoDueSoon.length > 0 && `　・期限が近いTODOがあります（${todoDueSoon.length}件）`}
-            </span>
-            <span className="sm:hidden flex flex-wrap gap-x-3 gap-y-1">
-              {todoHasAny && (
-                <button className="underline underline-offset-2 text-blue-600" onClick={scrollToTodo}>
-                  TODOがあります（{todoCards.length}件）
+          {topMsg && (
+            <div className="text-sm text-muted-foreground">
+              {/* PC: 文字のみ（最大1件） */}
+              <span className="hidden sm:inline">・{topMsg}</span>
+
+              {/* モバイル: 1件だけリンクでスクロール */}
+              <span className="sm:hidden">
+                <button
+                  className={`underline underline-offset-2 ${topMsgClass}`}
+                  onClick={scrollToTodo}
+                >
+                  {topMsg}
                 </button>
-              )}
-              {todoOverdue.length > 0 && (
-                <button className="underline underline-offset-2 text-red-600" onClick={scrollToTodo}>
-                  期限切れのTODOがあります（{todoOverdue.length}件）
-                </button>
-              )}
-              {todoDueSoon.length > 0 && (
-                <button className="underline underline-offset-2 text-amber-600" onClick={scrollToTodo}>
-                  期限が近いTODOがあります（{todoDueSoon.length}件）
-                </button>
-              )}
-            </span>
-          </div>
+              </span>
+            </div>
+          )}
         </div>
 
         <label className="flex items-center gap-2 text-sm select-none">
@@ -539,7 +546,7 @@ export default function TodayRunView() {
             )}
           </div>
 
-          {/* 右：PC 固定 TODO パネル（薄い水色）— “上へ戻る”ボタンは削除 */}
+          {/* 右：PC 固定 TODO パネル（薄い水色） */}
           {todoCards.length > 0 && (
             <aside
               id="todo-panel"
