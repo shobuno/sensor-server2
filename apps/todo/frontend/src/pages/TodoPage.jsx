@@ -6,7 +6,8 @@ import TodayRunView from "@todo/pages/TodayRunView.jsx";
 import TodayCloseView from "@todo/pages/TodayCloseView.jsx";
 import TodoAdd from "@todo/pages/TodoAdd.jsx";
 import TodoDailyReport from "@todo/pages/TodoDailyReport.jsx";
-import { listToday, getStartCandidates } from "@/api/todo";
+// ★ 自動遷移を廃止するため listToday/getStartCandidates は使わない（必要なら残してもOK）
+// import { listToday, getStartCandidates } from "@/api/todo";
 
 const CANCEL_FLAG = "todo:add:cancelEdit";
 
@@ -31,7 +32,7 @@ function useTabFromUrl(defaultTab) {
         cur.delete("edit");
       }
       if (cur.get("tab") !== nextTab) cur.set("tab", nextTab);
-      // ★ 追加のクエリ（例: { date: '2025-08-30' }）を反映
+      // 追加のクエリ（例: { date: '2025-08-30' }）を反映
       Object.entries(extraParams).forEach(([k, v]) => {
         if (v === undefined || v === null || v === "") cur.delete(k);
         else cur.set(k, String(v));
@@ -46,39 +47,15 @@ function useTabFromUrl(defaultTab) {
 
 export default function TodoPage() {
   const { search } = useLocation();
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(true); // ★ もう初期ロード判定は不要なので true で開始
   const [tab, setTab] = useTabFromUrl("today");
 
-  // ← ここで editId を必ず定義（この下で使います）
+  // URL から editId を取得
   const sp = new URLSearchParams(search);
   const editId = sp.get("edit");
-  const isEdit = Boolean(editId);
 
-  // 初回だけ：今日 → 今日の開始 → 追加
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const today = await listToday(1);
-        const hasToday = Array.isArray(today?.items)
-          ? today.items.length > 0
-          : (today?.length || 0) > 0;
-        if (mounted && hasToday) { setTab("today"); return; }
-
-        const candidates = await getStartCandidates();
-        const count = Array.isArray(candidates?.items)
-          ? candidates.items.length
-          : (candidates?.length || 0);
-        if (mounted) setTab(count > 0 ? "start" : "add");
-      } catch {
-        if (mounted) setTab("add");
-      } finally {
-        if (mounted) setReady(true);
-      }
-    })();
-    return () => { mounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // ★ 自動遷移ロジック（0件→add）を完全削除
+  // useEffect(() => { ... setTab("add") ... }, []);
 
   if (!ready) return null;
 
@@ -106,7 +83,8 @@ export default function TodoPage() {
         {tab === "start" && (
           <TodayStartView
             onCommitted={() => setTab("today")}
-            onEmptyInbox={() => setTab("add")}
+            // ★ 自動遷移廃止のため onEmptyInbox は渡さない
+            // onEmptyInbox={() => setTab("add")}
           />
         )}
 
@@ -119,7 +97,7 @@ export default function TodoPage() {
 
         {tab === "add" && (
           <TodoAdd
-            key={editId || "new"}        // ← editId 変化時に再マウントして確実に切替
+            key={editId || "new"}     // editId 変化時に再マウント
             editId={editId}
             onCreated={() => setTab("start")}
           />
@@ -130,13 +108,10 @@ export default function TodoPage() {
         {tab === "close" && (
           <TodayCloseView
             onClosed={(reportDate) => {
-              // 閉じたら履歴（当日）を開くのが自然ならこちら（任意）
-              // reportDate は "YYYY-MM-DD" を渡せるなら利用
               if (reportDate) setTab("reports", { date: reportDate });
               else setTab("start");
             }}
           />
-
         )}
       </div>
     </div>

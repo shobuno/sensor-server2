@@ -657,12 +657,7 @@ export default function TodayStart({ onEmptyInbox }) {
 
   if (loading) return <div className="p-4">読み込み中…</div>;
 
-  if (kindTab === "normal" && items.length === 0)
-    return (
-      <div className="text-sm text-gray-500 border rounded p-3">
-        INBOX が空です。新しいタスクを「追加」から登録してください。
-      </div>
-    );
+  // ★★ ここで「0件なら早期 return」はしない（コントロールを常に表示するため） ★★
 
   const chipClass = (active) =>
     "px-2 py-1 rounded-full border text-sm shrink-0 transition-colors " +
@@ -778,119 +773,129 @@ export default function TodayStart({ onEmptyInbox }) {
         </div>
       )}
 
-      {/* 本体リスト */}
-      <ul className="divide-y border rounded">
-        {sorted.map((i) => {
-          const checked  = kindTab === "normal" ? i.daily_report_id === dailyReportId : false;
-          const overdue  = isOverdue(i);
-          const isDone   = String(i.status || "").toUpperCase() === "DONE";
-          const todoKind = isTodoKind(i);
+      {/* ---- ここから本体表示 ---- */}
+      {/* 0件時のメッセージ（コントロールは上に残る） */}
+      {kindTab === "normal" && items.length === 0 && (
+        <div className="text-sm text-gray-500 border rounded p-3">
+          INBOX が空です。新しいタスクを「新規」から登録してください。
+        </div>
+      )}
 
-          /* ===== テンプレート表示 ===== */
-          if (kindTab === "template") {
+      {/* 本体リスト */}
+      {sorted.length > 0 && (
+        <ul className="divide-y border rounded">
+          {sorted.map((i) => {
+            const checked  = kindTab === "normal" ? i.daily_report_id === dailyReportId : false;
+            const overdue  = isOverdue(i);
+            const isDone   = String(i.status || "").toUpperCase() === "DONE";
+            const todoKind = isTodoKind(i);
+
+            /* ===== テンプレート表示 ===== */
+            if (kindTab === "template") {
+              return (
+                <li key={i.id} className="p-2 sm:p-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {i.todo_flag && (
+                      <span className="text-[10px] text-white bg-slate-500 rounded px-1 py-0.5 shrink-0">TODO</span>
+                    )}
+                    <div className="font-medium text-base leading-tight truncate flex-1">{i.title}</div>
+                  </div>
+                  <div className="mt-1 flex justify-end items-center gap-2">
+                    <button
+                      className="h-8 px-3 text-xs rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
+                      onClick={(e) => { e.stopPropagation(); addFromTemplate(i.id); }}
+                    >今日に追加</button>
+                    <button
+                      className="h-8 w-8 grid place-items-center rounded border hover:bg-gray-50"
+                      onClick={(e) => { e.stopPropagation(); setEditing(i); }}
+                      title="編集" aria-label="編集"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13.586 3a2 2 0 0 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zM12.379 5.207 3 14.586V18h3.414l9.379-9.379-3.414-3.414z"/>
+                      </svg>
+                    </button>
+                    <button
+                      className="h-8 px-3 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
+                      onClick={(e) => { e.stopPropagation(); removeItem(i.id); }}
+                    >削除</button>
+                  </div>
+                </li>
+              );
+            }
+
+            /* ===== normal / repeat 表示 ===== */
             return (
-              <li key={i.id} className="p-2 sm:p-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  {i.todo_flag && (
-                    <span className="text-[10px] text-white bg-slate-500 rounded px-1 py-0.5 shrink-0">TODO</span>
+              <li
+                key={i.id}
+                className="p-3 hover:bg-muted/30 cursor-pointer"
+                onClick={() => onRowClick(i)}
+                onDoubleClick={(e) => onRowDoubleClick(e, i)}
+              >
+                <div className="grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-3 items-start">
+                  {/* 左: チェック（normal のみ） */}
+                  {kindTab === "normal" ? (
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCheck(i)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label="今日に入れる"
+                      title="今日に入れる"
+                      className="mt-1"
+                    />
+                  ) : (
+                    <div className="mt-1 w-4 h-4" aria-hidden />
                   )}
-                  <div className="font-medium text-base leading-tight truncate flex-1">{i.title}</div>
-                </div>
-                <div className="mt-1 flex justify-end items-center gap-2">
-                  <button
-                    className="h-8 px-3 text-xs rounded border bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700"
-                    onClick={(e) => { e.stopPropagation(); addFromTemplate(i.id); }}
-                  >今日に追加</button>
-                  <button
-                    className="h-8 w-8 grid place-items-center rounded border hover:bg-gray-50"
-                    onClick={(e) => { e.stopPropagation(); setEditing(i); }}
-                    title="編集" aria-label="編集"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M13.586 3a2 2 0 0 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zM12.379 5.207 3 14.586V18h3.414l9.379-9.379-3.414-3.414z"/>
-                    </svg>
-                  </button>
-                  <button
-                    className="h-8 px-3 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50"
-                    onClick={(e) => { e.stopPropagation(); removeItem(i.id); }}
-                  >削除</button>
+
+                  {/* 中: タイトル＋メタ */}
+                  <div className={`min-w-0 ${todoKind && isDone ? "opacity-60 line-through" : ""}`}>
+                    <div className="font-medium text-base leading-snug break-words flex items-center gap-2 min-w-0">
+                      {todoKind && (
+                        <span className="text-[10px] text-white bg-slate-500 rounded px-1 py-0.5 shrink-0">TODO</span>
+                      )}
+                      <span className="truncate">{i.title}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500 flex flex-wrap items-center gap-2">
+                      {i.priority && <span className="hidden sm:inline text-yellow-500">{"★".repeat(i.priority)}</span>}
+                      {overdue && <span className="px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>}
+                      {(i.due_at || i.due_date) && (
+                        <span className="text-muted-foreground">
+                          {i.due_at ? `期限: ${fmtLocal(i.due_at)}` : `期限: ${i.due_date} 00:00`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 右: 操作 */}
+                  <div className="col-span-2 sm:col-span-1 sm:justify-self-end mt-2 sm:mt-0 items-center gap-2 hidden sm:flex">
+                    {kindTab === "normal" && isTodoKind(i) && (
+                      <label className="inline-flex items-center gap-1 text-xs select-none" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isDone}
+                          onChange={async (e) => {
+                            try { await toggleDoneTodoKind(i, e.target.checked, setItems); }
+                            catch { setError("完了状態の更新に失敗しました。"); }
+                          }}
+                        />
+                        <span>完了</span>
+                      </label>
+                    )}
+                    <button className="px-2 py-1 text-xs rounded border hover:bg-gray-50" onClick={async (e) => {
+                      e.stopPropagation();
+                      const withRule = (String(i.kind).toUpperCase().includes("REPEAT"))
+                        ? await ensureRepeatLoaded(i)
+                        : i;
+                      setEditing(withRule);
+                    }}>編集</button>
+                    <button className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); removeItem(i.id); }}>削除</button>
+                  </div>
                 </div>
               </li>
             );
-          }
-
-          /* ===== normal / repeat 表示 ===== */
-          return (
-            <li
-              key={i.id}
-              className="p-3 hover:bg-muted/30 cursor-pointer"
-              onClick={() => onRowClick(i)}
-              onDoubleClick={(e) => onRowDoubleClick(e, i)}
-            >
-              <div className="grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-3 items-start">
-                {/* 左: チェック（normal のみ） */}
-                {kindTab === "normal" ? (
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleCheck(i)}
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label="今日に入れる"
-                    title="今日に入れる"
-                    className="mt-1"
-                  />
-                ) : (
-                  <div className="mt-1 w-4 h-4" aria-hidden />
-                )}
-
-                {/* 中: タイトル＋メタ */}
-                <div className={`min-w-0 ${todoKind && isDone ? "opacity-60 line-through" : ""}`}>
-                  <div className="font-medium text-base leading-snug break-words flex items-center gap-2 min-w-0">
-                    {todoKind && (
-                      <span className="text-[10px] text-white bg-slate-500 rounded px-1 py-0.5 shrink-0">TODO</span>
-                    )}
-                    <span className="truncate">{i.title}</span>
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500 flex flex-wrap items-center gap-2">
-                    {i.priority && <span className="hidden sm:inline text-yellow-500">{"★".repeat(i.priority)}</span>}
-                    {overdue && <span className="px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>}
-                    {(i.due_at || i.due_date) && (
-                      <span className="text-muted-foreground">
-                        {i.due_at ? `期限: ${fmtLocal(i.due_at)}` : `期限: ${i.due_date} 00:00`}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 右: 操作 */}
-                <div className="col-span-2 sm:col-span-1 sm:justify-self-end mt-2 sm:mt-0 items-center gap-2 hidden sm:flex">
-                  {kindTab === "normal" && isTodoKind(i) && (
-                    <label className="inline-flex items-center gap-1 text-xs select-none" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={isDone}
-                        onChange={async (e) => {
-                          try { await toggleDoneTodoKind(i, e.target.checked, setItems); }
-                          catch { setError("完了状態の更新に失敗しました。"); }
-                        }}
-                      />
-                      <span>完了</span>
-                    </label>
-                  )}
-                  <button className="px-2 py-1 text-xs rounded border hover:bg-gray-50" onClick={async (e) => {
-                    e.stopPropagation();
-                    const withRule = (String(i.kind).toUpperCase().includes("REPEAT"))
-                      ? await ensureRepeatLoaded(i)
-                      : i;
-                    setEditing(withRule);
-                  }}>編集</button>
-                  <button className="px-2 py-1 text-xs rounded border text-red-600 border-red-600 hover:bg-red-50" onClick={(e) => { e.stopPropagation(); removeItem(i.id); }}>削除</button>
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+          })}
+        </ul>
+      )}
 
       {editing && (
         <EditItemModal

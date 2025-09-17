@@ -650,7 +650,11 @@ router.get('/items', async (req, res) => {
       ),0) AS run_seconds
     FROM todo.items i
     WHERE ${where.join(' AND ')}
-    ORDER BY COALESCE(i.plan_start_at,i.due_at,i.created_at), i.priority, i.id
+    ORDER BY
+      CASE WHEN i.due_at IS NULL THEN 1 ELSE 0 END,  -- due_at が NULL のものを後ろへ
+      i.due_at ASC,                                 -- 納期の古い順
+      i.priority ASC,                               -- 優先度の高い順 (1=最高)
+      i.id
   `;
   const { rows } = await dbQuery(q, params);
   res.json(rows.map(r => ({ ...r, priority: denormalizePriority(r.priority) })));
@@ -668,7 +672,6 @@ router.post('/items', async (req, res) => {
     kind, todo_flag,
     plan_start_at, plan_end_at, planned_minutes, sort_order, daily_report_id,
     favorite, note,
-    repeat
   } = req.body || {};
   if (!title) return res.status(400).json({ error: 'title required' });
 
@@ -678,11 +681,13 @@ router.post('/items', async (req, res) => {
   const tf = normalizeBool(today_flag, null);
   const todayFlag = (tf !== null) ? tf : (pin_today === true ? true : true);
   const kindNorm = normalizeKind(kind);
+  const repeatSpec = extractRepeatSpecFromBody(req.body); // あってもなくてもOK
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
+    // まずは items を作成
     const insRes = await client.query(
       `INSERT INTO todo.items
          (user_id,title,description,status,today_flag,priority,due_at,category,unit,
@@ -709,27 +714,37 @@ router.post('/items', async (req, res) => {
     );
     let row = insRes.rows[0];
 
-    const ruleId = await upsertRepeatRuleFromItem(userId, {
-      repeat_rule_id: req.body?.repeat_rule_id ?? null,
-      title,
-      summary: req.body?.summary ?? null,
-      rule: req.body?.repeat ?? req.body?.rule ?? extractRepeatSpecFromBody(req.body),
-      timezone: req.body?.timezone ?? 'Asia/Tokyo',
-      due_offset_days: req.body?.due_offset_days ?? 0,
-      default_today_flag: !!req.body?.default_today_flag,
-      default_todo_flag: !!req.body?.default_todo_flag,
-    });
+    // REPEAT の明示 & 有効な repeat のときだけ ルール upsert + 紐付け
+    const wantsRepeat =
+      kindNorm === 'REPEAT' &&
+      repeatSpec && typeof repeatSpec.type === 'string' &&
+      repeatSpec.type !== 'none';
 
-    await client.query(
-      `
-      UPDATE todo.items
-        SET kind='REPEAT',
-            repeat_rule_id=$2,
-            updated_at=NOW()
-      WHERE id=$1 AND user_id=$3
-      `,
-      [row.id, ruleId, userId]
-    );
+    if (wantsRepeat) {
+      const ruleId = await upsertRepeatRuleFromItem(userId, {
+        repeat_rule_id: req.body?.repeat_rule_id ?? null,
+        title,
+        summary: req.body?.summary ?? null,
+        rule: repeatSpec,
+        timezone: req.body?.timezone ?? 'Asia/Tokyo',
+        due_offset_days: req.body?.due_offset_days ?? 0,
+        default_today_flag: !!req.body?.default_today_flag,
+        default_todo_flag: !!req.body?.default_todo_flag,
+      });
+
+      await client.query(
+        `UPDATE todo.items
+            SET kind='REPEAT', repeat_rule_id=$2, updated_at=NOW()
+          WHERE id=$1 AND user_id=$3`,
+        [row.id, ruleId, userId]
+      );
+
+      // レスポンス用に最新値を取得
+      const r2 = await client.query(`SELECT * FROM todo.items WHERE id=$1 AND user_id=$2`, [row.id, userId]);
+      row = r2.rows[0] || row;
+    } else {
+      // NORMAL/TEMPLATE のときは何もしない（repeat_rule_idは付けない）
+    }
 
     await client.query('COMMIT');
     row.priority = denormalizePriority(row.priority);
@@ -742,6 +757,7 @@ router.post('/items', async (req, res) => {
     client.release();
   }
 });
+
 
 router.patch('/items/:id', async (req, res) => {
   const userId = getUserId(req);
@@ -812,7 +828,7 @@ router.patch('/items/:id', async (req, res) => {
     const repeatInRequest = Object.prototype.hasOwnProperty.call(req.body, 'repeat');
     const repeatSpec = repeatInRequest ? extractRepeatSpecFromBody(req.body) : null;
 
-    // === 2) repeat_rule のリンク/更新は「明示された時」だけ扱う（FIX） ===
+    // === 2) repeat_rule のリンク/更新は「明示された時」だけ扱う ===
 
     // 2-1) kind を明示的に REPEAT -> 非 REPEAT に変更した場合はリンクを外す
     if (requestedKindPresent && row.kind === 'REPEAT' && requestedKind !== 'REPEAT') {
@@ -820,7 +836,6 @@ router.patch('/items/:id', async (req, res) => {
         `UPDATE todo.items SET repeat_rule_id=NULL WHERE id=$1 AND user_id=$2`,
         [row.id, userId]
       );
-      // row を最新化
       const r2 = await client.query(`SELECT * FROM todo.items WHERE id=$1 AND user_id=$2`, [row.id, userId]);
       row = r2.rows[0] || row;
     }
@@ -857,8 +872,6 @@ router.patch('/items/:id', async (req, res) => {
       }
     }
 
-    // ※ 上の 2-1, 2-2 以外（たとえば today_flag だけ更新など）は repeat_rule_id を触らない（FIX）
-
     await client.query('COMMIT');
     row.priority = denormalizePriority(row.priority);
     res.json(row);
@@ -875,13 +888,81 @@ router.patch('/items/:id', async (req, res) => {
 router.delete('/items/:id', async (req, res) => {
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: 'no user id' });
-  const { rowCount } = await dbQuery(
-    `DELETE FROM todo.items WHERE user_id=$1 AND id=$2`,
-    [userId, req.params.id]
-  );
-  if (!rowCount) return res.status(404).json({ error: 'not found' });
-  res.json({ ok: true });
+
+  const itemId = Number(req.params.id);
+  if (!Number.isInteger(itemId)) return res.status(400).json({ error: 'bad id' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1) 削除対象のアイテムを取得（ロック）
+    const r1 = await client.query(
+      `SELECT id, kind, repeat_rule_id
+         FROM todo.items
+        WHERE user_id = $1 AND id = $2
+        FOR UPDATE`,
+      [userId, itemId]
+    );
+    if (!r1.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'not found' });
+    }
+    const target = r1.rows[0];
+
+    // 2) まず items 本体を削除
+    await client.query(
+      `DELETE FROM todo.items WHERE user_id = $1 AND id = $2`,
+      [userId, itemId]
+    );
+
+    // 3) REPEAT の根（ルール持ち）を消した場合の後始末
+    if (target.kind === 'REPEAT' && target.repeat_rule_id != null) {
+      const ruleId = Number(target.repeat_rule_id);
+
+      // 3-1) 同じルールを参照する別の REPEAT が残っているか？
+      const existOtherRepeat = await client.query(
+        `SELECT 1
+           FROM todo.items
+          WHERE user_id = $1
+            AND kind = 'REPEAT'::todo.item_kind
+            AND repeat_rule_id = $2
+            AND id <> $3
+          LIMIT 1`,
+        [userId, ruleId, itemId]
+      );
+
+      if (!existOtherRepeat.rowCount) {
+        // 3-2) ルールに紐づく items の参照を一括で外す（NORMAL/TEMPLATEなど含む）
+        await client.query(
+          `UPDATE todo.items
+              SET repeat_rule_id = NULL, updated_at = now()
+            WHERE user_id = $1
+              AND repeat_rule_id = $2`,
+          [userId, ruleId]
+        );
+
+        // 3-3) ルール本体を削除
+        await client.query(
+          `DELETE FROM todo.repeat_rules
+            WHERE user_id = $1 AND id = $2`,
+          [userId, ruleId]
+        );
+      }
+      // 別のREPEATが残っている場合はルールは残す（参照があるため）
+    }
+
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /items/:id failed:', e);
+    res.status(500).json({ error: 'delete failed' });
+  } finally {
+    client.release();
+  }
 });
+
 
 /* ======================= Repeat Rules CRUD ======================= */
 
@@ -1146,7 +1227,11 @@ async function handleGetDayStart(req, res) {
           dr.id IS NOT NULL
           OR (i.daily_report_id IS NULL AND i.status <> 'DONE'::todo.item_status)
         )
-      ORDER BY COALESCE(i.plan_start_at, i.due_at, i.created_at), i.priority, i.id
+      ORDER BY
+        CASE WHEN i.due_at IS NULL THEN 1 ELSE 0 END,
+        i.due_at ASC,
+        i.priority ASC,
+        i.id
       `,
       [userId, dailyReportId]
     );
