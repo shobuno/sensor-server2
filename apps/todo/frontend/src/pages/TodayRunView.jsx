@@ -1,10 +1,12 @@
 // sensor-server/apps/todo/frontend/src/pages/TodayRunView.jsx
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "@/auth";
 import useSessionState from "@todo/hooks/useSessionState.js";
 import { patchItem } from "../lib/apiTodo";
 import EditItemModal from "../components/EditItemModal";
+
+import MiniCalendar from "../components/widgets/MiniCalendar";
+import WeatherMini from "../components/widgets/WeatherMini";
 
 /* ===== TODO-kind 判定 ===== */
 const isTodoKind = (item) =>
@@ -103,7 +105,6 @@ export default function TodayRunView() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ 絞り込み保存/復元
   const [showDone, setShowDone] = useSessionState("todo:today:showDone", false);
   const [persistedTags, setPersistedTags] = useSessionState("todo:today:selectedTags", []);
   const [categoryFilter, setCategoryFilter] = useSessionState("todo:today:category", null);
@@ -112,11 +113,9 @@ export default function TodayRunView() {
   const [tick, setTick] = useState(0);
   const [scheduleTick, setScheduleTick] = useState(0);
 
-  // 編集モーダル
-  const [editing, setEditing] = useState(null); // item or null
+  const [editing, setEditing] = useState(null);
   const closeModal = () => setEditing(null);
 
-  // スクロール参照
   const todoRef = useRef(null);
 
   useEffect(() => { load(); }, []);
@@ -130,7 +129,6 @@ export default function TodayRunView() {
     }
   };
 
-  // ====== 取得データの整形 ======
   const toNumberOrNull = (v) => {
     const n = typeof v === "number" ? v : Number(v);
     return Number.isFinite(n) ? n : null;
@@ -149,7 +147,6 @@ export default function TodayRunView() {
       plan_end_at: r.plan_end_at ?? null,
     }));
 
-  // DOING があれば1秒ごとに tick を増加
   const hasDoing = useMemo(() => items.some((it) => it.status === "DOING"), [items]);
   useEffect(() => {
     if (!hasDoing) return;
@@ -157,17 +154,14 @@ export default function TodayRunView() {
     return () => clearInterval(h);
   }, [hasDoing]);
 
-  // 予定色替え（30秒ごと）
   useEffect(() => {
     const h = setInterval(() => setScheduleTick((t) => t + 1), 30000);
     return () => clearInterval(h);
   }, []);
 
-  // 表示用：DOING は tick を加算して表示
   const dispTotalSec = (it) => it.run_seconds + (it.status === "DOING" ? tick : 0);
   const dispTodaySec = (it) => it.today_run_seconds + (it.status === "DOING" ? tick : 0);
 
-  // ✅ フィルタ
   const filtered = useMemo(() => {
     return items.filter((it) => {
       if (!showDone && it.status === "DONE") return false;
@@ -180,7 +174,6 @@ export default function TodayRunView() {
     });
   }, [items, showDone, tagFilter, categoryFilter, scheduleTick]);
 
-  // 並び順: DOING → 予定開始 → 期限 → 重要度 → id
   const sorted = useMemo(() => {
     const statusRank = (it) => (it.status === "DOING" ? 0 : 1);
     const tsOr = (iso, fallback) => {
@@ -211,13 +204,11 @@ export default function TodayRunView() {
     });
   }, [filtered]);
 
-  // ====== 操作 ======
   const start  = async (id) => { await fetchJson(`/api/todo/items/${id}/start`,  { method: "POST" }); load(); };
   const pause  = async (id) => { await fetchJson(`/api/todo/items/${id}/pause`,  { method: "POST" }); load(); };
   const finish = async (id) => { await fetchJson(`/api/todo/items/${id}/finish`, { method: "POST" }); load(); };
   const undoFinish = async (id) => { await fetchJson(`/api/todo/items/${id}/pause`, { method: "POST" }); load(); };
 
-  // ==== インライン・フィルタ UI 用の集計 ====
   const visibleForFilter = useMemo(
     () => items.filter((it) => showDone || it.status !== "DONE"),
     [items, showDone]
@@ -239,7 +230,6 @@ export default function TodayRunView() {
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [visibleForFilter]);
 
-  // ✅ フィルタの変更ハンドラ
   const onToggleTag = (t) => {
     setPersistedTags((arr) => {
       const set = new Set(arr || []);
@@ -250,28 +240,23 @@ export default function TodayRunView() {
   const onSelectCategory = (cOrNull) => setCategoryFilter(cOrNull);
   const onClearFilters = () => { setPersistedTags([]); setCategoryFilter(null); };
 
-  // ダブルクリックでモーダル編集
   const onCardDblClick = (e, it) => {
     e.preventDefault();
     e.stopPropagation();
     setEditing(it);
   };
 
-  // 見た目（チップ）共通関数
   const chipClass = (active) =>
     "px-2 py-1 rounded-full border text-sm shrink-0 transition-colors " +
     (active ? "bg-background" : "bg-muted text-muted-foreground");
 
-  // ===== 振り分け（通常 vs TODO） =====
   const normalCards = sorted.filter((it) => !isTodoKind(it));
   const todoCards   = sorted.filter((it) =>  isTodoKind(it));
 
-  // ===== TODOの状態（上部メッセージ／リンク用） =====
   const todoHasAny   = todoCards.length > 0;
   const todoOverdue  = todoCards.filter(isOverdue);
   const todoDueSoon  = todoCards.filter(isDueSoonWithin24h);
 
-  // ====== モーダル保存 ======
   async function saveEdit(values) {
     try {
       await patchItem(values.id, {
@@ -289,26 +274,7 @@ export default function TodayRunView() {
         unit: values.unit ?? null,
       });
       setItems((arr) =>
-        arr.map((x) =>
-          x.id === values.id
-            ? {
-                ...x,
-                title: values.title,
-                due_at: values.due_at || null,
-                priority: values.priority,
-                category: values.category ?? null,
-                tags_text: (values.tags || []).join(","),
-                tags: values.tags || [],
-                description: values.description ?? null,
-                todo_flag: !!values.todo_flag,
-                plan_start_at: values.plan_start_at || null,
-                plan_end_at: values.plan_end_at || null,
-                planned_amount: values.planned_amount ?? null,
-                remaining_amount: values.remaining_amount ?? null,
-                unit: values.unit ?? null,
-              }
-            : x
-        )
+        arr.map((x) => (x.id === values.id ? { ...x, ...values } : x))
       );
       closeModal();
     } catch (e) {
@@ -316,27 +282,19 @@ export default function TodayRunView() {
     }
   }
 
-  /* ===== スクロール関数 ===== */
   const scrollToTop = () => {
-    try {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch {
-      window.scrollTo(0, 0);
-    }
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); }
+    catch { window.scrollTo(0, 0); }
   };
   const scrollToTodo = () => {
     const el = document.getElementById("todo-panel") || todoRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const y = rect.top + window.pageYOffset - 8;
-    try {
-      window.scrollTo({ top: y, behavior: "smooth" });
-    } catch {
-      window.scrollTo(0, y);
-    }
+    try { window.scrollTo({ top: y, behavior: "smooth" }); }
+    catch { window.scrollTo(0, y); }
   };
 
-  // ===== 表示メッセージ（最大1件、優先順位：期限切れ→近い→あるだけ） =====
   const { topMsg, topMsgClass } = useMemo(() => {
     let msg = null;
     let cls = "";
@@ -359,38 +317,24 @@ export default function TodayRunView() {
       <div className="flex items-start justify-between mb-2 sm:mb-3">
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-bold">今日のタスク</h2>
-
-          {/* ステータスメッセージ（PCは文字だけ／モバイルはリンクでスクロール） */}
           {topMsg && (
             <div className="text-sm text-muted-foreground">
-              {/* PC: 文字のみ（最大1件） */}
               <span className="hidden sm:inline">・{topMsg}</span>
-
-              {/* モバイル: 1件だけリンクでスクロール */}
               <span className="sm:hidden">
-                <button
-                  className={`underline underline-offset-2 ${topMsgClass}`}
-                  onClick={scrollToTodo}
-                >
+                <button className={`underline underline-offset-2 ${topMsgClass}`} onClick={scrollToTodo}>
                   {topMsg}
                 </button>
               </span>
             </div>
           )}
         </div>
-
         <label className="flex items-center gap-2 text-sm select-none">
-          <input
-            type="checkbox"
-            className="checkbox"
-            checked={!!showDone}
-            onChange={(e) => setShowDone(e.target.checked)}
-          />
+          <input type="checkbox" className="checkbox" checked={!!showDone} onChange={(e) => setShowDone(e.target.checked)} />
           <span>完了も表示</span>
         </label>
       </div>
 
-      {/* インライン・フィルタ（横並び・空なら非表示） */}
+      {/* インライン・フィルタ（タグ・カテゴリ） */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-3">
         {tagCounts.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -434,155 +378,52 @@ export default function TodayRunView() {
             </button>
           )}
       </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4">
+        {/* 左：通常カード */}
+        <div>
+          {normalCards.map((it) => (
+            <TaskCard key={it.id} it={it} totalSec={dispTotalSec(it)} todaySec={dispTodaySec(it)}
+              onEdit={() => setEditing(it)} start={start} pause={pause} finish={finish} undoFinish={undoFinish}
+              onDbl={(e) => onCardDblClick(e, it)} chipClass={chipClass} onToggleTag={onToggleTag}
+              onSelectCategory={onSelectCategory} categoryFilter={categoryFilter} tagFilter={tagFilter} />
+          ))}
 
-      {/* ===== レイアウト：モバイルは縦、PCは2カラム（右にTODO） ===== */}
-      {loading ? (
-        <div className="text-sm text-muted-foreground">読み込み中…</div>
-      ) : normalCards.length === 0 && todoCards.length === 0 ? (
-        <div className="text-sm text-muted-foreground">表示するタスクがありません。</div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4">
-          {/* 左：通常カード */}
-          <div>
-            {normalCards.length > 0 && (
-              <div className="space-y-3">
-                {normalCards.map((it) => (
-                  <TaskCard
-                    key={it.id}
-                    it={it}
-                    totalSec={dispTotalSec(it)}
-                    todaySec={dispTodaySec(it)}
-                    onEdit={() => setEditing(it)}
-                    start={start}
-                    pause={pause}
-                    finish={finish}
-                    undoFinish={undoFinish}
-                    onDbl={(e) => onCardDblClick(e, it)}
-                    chipClass={chipClass}
-                    onToggleTag={onToggleTag}
-                    onSelectCategory={onSelectCategory}
-                    categoryFilter={categoryFilter}
-                    tagFilter={tagFilter}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* モバイル：TODO は下に（縦並び） */}
-            {todoCards.length > 0 && (
-              <div
-                id="todo-panel"
-                ref={todoRef}
-                className="lg:hidden mt-6 rounded-2xl p-2 sm:p-3 border border-sky-200 bg-sky-50"
-              >
-                <div className="px-1 pb-1 font-bold text-sm md:text-base flex items-center justify-between">
-                  <span>TODO（チェックで完了）</span>
-                  <button className="text-xs underline text-blue-700" onClick={scrollToTop}>上へ戻る</button>
-                </div>
-
-                <div className="space-y-2">
-                  {todoCards.map((it) => {
-                    const isDone = String(it.status || "").toUpperCase() === "DONE";
-                    return (
-                      <div
-                        key={it.id}
-                        className={
-                          "rounded-xl border p-2 sm:p-2.5 cursor-pointer bg-white " +
-                          (isDone ? "opacity-70" : "")
-                        }
-                        onDoubleClick={(e) => onCardDblClick(e, it)}
-                        title="ダブルクリックで編集"
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 min-w-0 truncate">
-                            <span className={isDone ? "line-through" : ""}>{it.title}</span>
-                            {it.priority && (
-                              <span className="ml-1 text-yellow-500">
-                                {"★".repeat(it.priority)}
-                              </span>
-                            )}
-                          </div>
-                          <button
-                            className="px-2 py-1 rounded-lg border hover:bg-gray-50 text-xs sm:text-sm"
-                            onClick={(e) => { e.stopPropagation(); setEditing(it); }}
-                            title="編集"
-                            aria-label="編集"
-                          >
-                            編集
-                          </button>
-                          <label
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-background text-xs sm:text-sm"
-                            onClick={(e) => e.stopPropagation()}
-                            title="完了（TODO型）"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isDone}
-                              onChange={async (e) => {
-                                try {
-                                  await toggleDoneTodoKind(it, e.target.checked, setItems);
-                                } catch {}
-                              }}
-                            />
-                            <span className="select-none">完了</span>
-                          </label>
-                        </div>
-
-                        {(it.due_at || it.due_date) && (
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {isOverdue(it) && (
-                              <span className="mr-2 px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>
-                            )}
-                            {it.due_at
-                              ? `期限: ${fmtLocal(it.due_at)}`
-                              : `期限: ${fmtDate(it.due_date)} 00:00`}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 右：PC 固定 TODO パネル（薄い水色） */}
-          {todoCards.length > 0 && (
-            <aside
-              id="todo-panel"
-              ref={todoRef}
-              className="hidden lg:block sticky top-20 self-start rounded-2xl p-3 border border-sky-200 bg-sky-50"
-            >
-              <div className="pb-2 font-bold">TODO（チェックで完了）</div>
-
-              <div className="space-y-2">
-                {todoCards.map((it) => {
+          {/* モバイル：TODO＋ウィジェット */}
+          <div id="todo-panel" ref={todoRef} className="lg:hidden mt-6 rounded-2xl p-2 sm:p-3 border border-sky-200 bg-sky-50">
+            <div className="px-1 pb-1 font-bold text-sm md:text-base flex items-center justify-between">
+              <span>TODO（チェックで完了）</span>
+              <button className="text-xs underline text-blue-700" onClick={scrollToTop}>上へ戻る</button>
+            </div>
+            <div className="space-y-2">
+              {todoCards.length === 0 ? (
+                <div className="text-xs text-muted-foreground border rounded-md p-2 bg-white">TODOはありません</div>
+              ) : (
+                todoCards.map((it) => {
                   const isDone = String(it.status || "").toUpperCase() === "DONE";
                   return (
                     <div
                       key={it.id}
-                      className={"rounded-xl border p-2 bg-white " + (isDone ? "opacity-70" : "")}
-                      onDoubleClick={(e) => onCardDblClick(e, it)}
+                      className={"rounded-xl border p-2 sm:p-2.5 cursor-pointer bg-white " + (isDone ? "opacity-70" : "")}
+                      onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditing(it); }}
                       title="ダブルクリックで編集"
                     >
                       <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0 truncate">
                           <span className={isDone ? "line-through" : ""}>{it.title}</span>
-                          {it.priority && (
-                            <span className="ml-1 text-yellow-500">{"★".repeat(it.priority)}</span>
-                          )}
+                          {it.priority && <span className="ml-1 text-yellow-500">{"★".repeat(it.priority)}</span>}
                         </div>
 
                         <button
-                          className="px-2 py-1 rounded-lg border hover:bg-gray-50 text-xs"
+                          className="px-2 py-1 rounded-lg border hover:bg-gray-50 text-xs sm:text-sm"
                           onClick={(e) => { e.stopPropagation(); setEditing(it); }}
                           title="編集"
+                          aria-label="編集"
                         >
                           編集
                         </button>
 
                         <label
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-background text-xs"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-background text-xs sm:text-sm"
                           onClick={(e) => e.stopPropagation()}
                           title="完了（TODO型）"
                         >
@@ -598,34 +439,93 @@ export default function TodayRunView() {
                       </div>
 
                       {(it.due_at || it.due_date) && (
-                        <div className="mt-1 text-[11px] text-muted-foreground">
-                          {isOverdue(it) && (
-                            <span className="mr-2 px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>
-                          )}
-                          {it.due_at
-                            ? `期限: ${fmtLocal(it.due_at)}`
-                            : `期限: ${fmtDate(it.due_date)} 00:00`}
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {isOverdue(it) && <span className="mr-2 px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>}
+                          {it.due_at ? `期限: ${fmtLocal(it.due_at)}` : `期限: ${fmtDate(it.due_date)} 00:00`}
                         </div>
                       )}
                     </div>
                   );
-                })}
-              </div>
-            </aside>
-          )}
-        </div>
-      )}
+                })
+              )}
+            </div>
 
-      {/* ===== 編集モーダル ===== */}
-      {editing && (
-        <EditItemModal
-          item={editing}
-          onCancel={closeModal}
-          onSave={saveEdit}
-        />
-      )}
+            <MiniCalendar onPickDay={(d) => console.log("picked date", d)} />
+            <WeatherMini />
+          </div>
+        </div>
+
+        {/* PC：TODO＋ウィジェット */}
+          <aside
+            id="todo-panel"
+            ref={todoRef}
+            className="hidden lg:block sticky top-20 self-start rounded-2xl p-3 border border-slate-200 bg-white"
+          >
+          <div className="pb-2 font-bold">TODO（チェックで完了）</div>
+          <div className="space-y-2">
+            {todoCards.length === 0 ? (
+              <div className="text-xs text-muted-foreground border rounded-md p-2 bg-white">TODOはありません</div>
+            ) : (
+              todoCards.map((it) => {
+                const isDone = String(it.status || "").toUpperCase() === "DONE";
+                return (
+                  <div
+                    key={it.id}
+                    className={"rounded-xl border p-2 bg-white " + (isDone ? "opacity-70" : "")}
+                    onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditing(it); }}
+                    title="ダブルクリックで編集"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0 truncate">
+                        <span className={isDone ? "line-through" : ""}>{it.title}</span>
+                        {it.priority && <span className="ml-1 text-yellow-500">{"★".repeat(it.priority)}</span>}
+                      </div>
+
+                      <button
+                        className="px-2 py-1 rounded-lg border hover:bg-gray-50 text-xs"
+                        onClick={(e) => { e.stopPropagation(); setEditing(it); }}
+                        title="編集"
+                      >
+                        編集
+                      </button>
+
+                      <label
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-background text-xs"
+                        onClick={(e) => e.stopPropagation()}
+                        title="完了（TODO型）"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isDone}
+                          onChange={async (e) => {
+                            try { await toggleDoneTodoKind(it, e.target.checked, setItems); } catch {}
+                          }}
+                        />
+                        <span className="select-none">完了</span>
+                      </label>
+                    </div>
+
+                    {(it.due_at || it.due_date) && (
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {isOverdue(it) && <span className="mr-2 px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>}
+                        {it.due_at ? `期限: ${fmtLocal(it.due_at)}` : `期限: ${fmtDate(it.due_date)} 00:00`}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <MiniCalendar onPickDay={(d) => console.log("picked date", d)} />
+          <WeatherMini />
+        </aside>
+      </div>
+
+      {editing && <EditItemModal item={editing} onCancel={closeModal} onSave={saveEdit} />}
     </div>
   );
+
 }
 
 /* --- 通常カード --- */
@@ -650,7 +550,7 @@ function TaskCard({
       title="ダブルクリックで編集"
     >
       <div className="grid grid-cols-[1fr_auto] gap-x-3">
-        {/* タイトル */}
+        {/* タイトル＋予定時間 */}
         <div className="col-span-2">
           <div className="font-semibold text-base break-words flex items-center gap-2">
             {(it.plan_start_at || it.plan_end_at) && (
@@ -664,7 +564,7 @@ function TaskCard({
           </div>
         </div>
 
-        {/* 情報バッジ */}
+        {/* 情報バッジ／タグ・カテゴリ */}
         <div className="min-w-0 mt-1">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             {(it.due_at || it.due_date) && (
@@ -673,13 +573,11 @@ function TaskCard({
                   <span className="px-2 py-0.5 rounded-full bg-red-600 text-white">期限超過</span>
                 )}
                 <span className="text-muted-foreground">
-                  {it.due_at
-                    ? `期限: ${fmtLocal(it.due_at)}`
-                    : `期限: ${fmtDate(it.due_date)} 00:00`}
+                  {it.due_at ? `期限: ${fmtLocal(it.due_at)}` : `期限: ${fmtDate(it.due_date)} 00:00`}
                 </span>
               </>
             )}
-            {/* PCではタグ/カテゴリも表示 */}
+
             <div className="hidden sm:flex items-center gap-2 flex-wrap">
               {it.category && (
                 <button
@@ -704,7 +602,7 @@ function TaskCard({
           </div>
         </div>
 
-        {/* 右端ボタン */}
+        {/* 右端の操作ボタン群 */}
         <div className="ml-auto shrink-0 flex gap-2 row-span-2 self-end">
           <button
             className="px-2 py-1.5 rounded-xl border hover:bg-gray-50 text-sm"
@@ -712,10 +610,7 @@ function TaskCard({
             title="編集"
             aria-label="編集"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 inline-block align-[-2px]" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M13.586 3a2 2 0 0 1 2.828 2.828l-.793.793-2.828-2.828.793-.793zM12.379 5.207 3 14.586V18h3.414l9.379-9.379-3.414-3.414z"/>
-            </svg>
-            <span className="ml-1 hidden sm:inline">編集</span>
+            ✎<span className="ml-1 hidden sm:inline">編集</span>
           </button>
 
           {it.status === "DOING" ? (
@@ -723,31 +618,24 @@ function TaskCard({
               <button
                 className="px-3 py-1.5 rounded-xl font-medium border shadow-sm bg-white text-gray-900 border-gray-300 hover:bg-gray-50 active:scale-[0.99] text-sm"
                 onClick={(e) => { e.stopPropagation(); pause(it.id); }}
-                aria-label="一時停止"
               >
                 一時停止
               </button>
               <button
                 className="px-3 py-1.5 rounded-xl font-medium border shadow-sm bg-red-600 text-white border-red-700 hover:bg-red-700 active:scale-[0.99] text-sm"
                 onClick={(e) => { e.stopPropagation(); finish(it.id); }}
-                aria-label="終了"
               >
                 終了
               </button>
             </>
           ) : it.status === "DONE" ? (
             <>
-              <button
-                className="px-3 py-1.5 rounded-xl border bg-muted/40 text-muted-foreground cursor-default text-sm"
-                disabled
-                aria-label="完了"
-              >
+              <button className="px-3 py-1.5 rounded-xl border bg-muted/40 text-muted-foreground cursor-default text-sm" disabled>
                 完了
               </button>
               <button
                 className="px-3 py-1.5 rounded-xl font-medium border shadow-sm bg-white text-gray-900 border-gray-300 hover:bg-gray-50 active:scale-[0.99] text-sm"
                 onClick={(e) => { e.stopPropagation(); undoFinish(it.id); }}
-                aria-label="終了取消"
               >
                 取消
               </button>
@@ -757,14 +645,12 @@ function TaskCard({
               <button
                 className="px-3 py-1.5 rounded-xl font-medium border shadow-sm bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700 active:scale-[0.99] text-sm"
                 onClick={(e) => { e.stopPropagation(); start(it.id); }}
-                aria-label="開始"
               >
                 開始
               </button>
               <button
                 className="px-3 py-1.5 rounded-xl font-medium border shadow-sm bg-white text-gray-900 border-gray-300 hover:bg-gray-50 active:scale-[0.99] text-sm"
                 onClick={(e) => { e.stopPropagation(); finish(it.id); }}
-                aria-label="終了"
               >
                 終了
               </button>
