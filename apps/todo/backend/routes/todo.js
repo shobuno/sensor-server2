@@ -4,6 +4,8 @@ const router = express.Router();
 
 const widgets = require('./todo/widgets');
 router.use('/widgets', widgets);
+router.use('/holidays', require('./todo/holidays'));
+
 
 const { attachItemRoutes }       = require('./todo/items');
 const { attachActionRoutes }     = require('./todo/actions');

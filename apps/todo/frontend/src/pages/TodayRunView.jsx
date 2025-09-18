@@ -4,9 +4,8 @@ import { fetchJson } from "@/auth";
 import useSessionState from "@todo/hooks/useSessionState.js";
 import { patchItem } from "../lib/apiTodo";
 import EditItemModal from "../components/EditItemModal";
-
-import MiniCalendar from "../components/widgets/MiniCalendar";
-import WeatherMini from "../components/widgets/WeatherMini";
+import CalendarWithHolidays from "../components/CalendarWithHolidays.jsx";
+import Weather3Day from "../components/widgets/Weather3Day.jsx";
 
 /* ===== TODO-kind 判定 ===== */
 const isTodoKind = (item) =>
@@ -104,6 +103,18 @@ function fmtTime(iso) {
 export default function TodayRunView() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // 祝日クリックの詳細表示（PC/モバイル共通）
+  const [holidayInfo, setHolidayInfo] = useState(null); // {date: 'YYYY-MM-DD'}
+
+  // === 祝日カレンダー/3日予報用の状態 ===
+  const today = useMemo(() => new Date(), []);
+  const [viewDate, setViewDate] = useState(today);
+  const viewYear  = viewDate.getFullYear();
+  const viewMonth = viewDate.getMonth() + 1;
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const [selectedYmd, setSelectedYmd] = useState(ymd(today));
+
 
   const [showDone, setShowDone] = useSessionState("todo:today:showDone", false);
   const [persistedTags, setPersistedTags] = useSessionState("todo:today:selectedTags", []);
@@ -450,8 +461,24 @@ export default function TodayRunView() {
               )}
             </div>
 
-            <MiniCalendar onPickDay={(d) => console.log("picked date", d)} />
-            <WeatherMini />
+            {/* 祝日つきミニカレンダー（モバイル側） */}
+            <CalendarWithHolidays
+              onSelect={(d, meta)=>{
+                setSelectedYmd?.(d);
+                setHolidayInfo({ date: d, ...meta });
+              }}
+              className="mt-3"
+            />
+            {holidayInfo && (
+              <div className="mt-2 rounded-xl border bg-white p-2 text-sm">
+                <div className="font-semibold">{holidayInfo.date}</div>
+                {holidayInfo.isHoliday && (
+                  <div className="mt-0.5 text-rose-700">祝日: {holidayInfo.name}</div>
+                )}
+              </div>
+            )}
+            {/* 3日予報 */}
+            <Weather3Day className="mt-3" />
           </div>
         </div>
 
@@ -517,8 +544,27 @@ export default function TodayRunView() {
             )}
           </div>
 
-          <MiniCalendar onPickDay={(d) => console.log("picked date", d)} />
-          <WeatherMini />
+          {/* 祝日つきミニカレンダー */}
+          <CalendarWithHolidays
+            year={viewYear}
+            month={viewMonth}
+            onSelect={(d, meta) => {
+              setSelectedYmd(d);
+              setHolidayInfo({ date: d, ...meta }); // 祝日情報も保持
+            }}
+            selectedYmd={selectedYmd}
+            className="mt-3"
+          />
+          {holidayInfo && (
+            <div className="mt-2 rounded-xl border bg-white p-2 text-sm">
+              <div className="font-semibold">{holidayInfo.date}</div>
+              {holidayInfo.isHoliday && (
+                <div className="mt-0.5 text-rose-700">祝日: {holidayInfo.name}</div>
+              )}
+            </div>
+          )}
+          {/* 3日予報 */}
+          <Weather3Day className="mt-3" />
         </aside>
       </div>
 
