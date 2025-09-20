@@ -10,7 +10,7 @@ const DEBUG_WEATHER = typeof window !== "undefined"
 const DEFAULT_PREF_CODE = import.meta.env.VITE_JMA_FORECAST_CODE || "130000"; // 東京都
 const DEFAULT_CITY_CODE = import.meta.env.VITE_JMA_CITY_CODE || null;
 const CACHE_MIN = Number(import.meta.env.VITE_WEATHER_CACHE_MINUTES || 60);
-const DAYS_OPTIONS = [3, 5, 7, 10];
+const DAYS_OPTIONS = [1, 3, 7];
 
 /* ===== 都道府県名 → JMA PREF_CODE ===== */
 const PREF_MAP = {
