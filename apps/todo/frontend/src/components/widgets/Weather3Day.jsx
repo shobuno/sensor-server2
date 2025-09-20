@@ -172,6 +172,8 @@ async function fetchJma(prefCode, cityCode) {
     return {
       prefCode: DEFAULT_PREF_CODE,
       cityCode: DEFAULT_CITY_CODE,
+      displayPref: "デフォルト",
+      displayAddress: "未取得",
       _debug: { reason: String(e?.message || e) }
     };
    }
