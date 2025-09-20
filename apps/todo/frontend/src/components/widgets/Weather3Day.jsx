@@ -199,7 +199,7 @@ async function detectPrefCityCode() {
     console.warn("位置情報取得失敗", e);
     return {
       prefCode: DEFAULT_PREF_CODE, cityCode: DEFAULT_CITY_CODE,
-      displayPref: "デフォルト", displayAddress: "未取得",
+      displayPref: "東京（デフォルト）", displayAddress: "未取得",
       _debug: { reason: String(e) }
     };
   }
@@ -209,7 +209,7 @@ async function detectPrefCityCode() {
 export default function Weather3Day() {
   const [prefCity, setPrefCity] = useState({
     prefCode: DEFAULT_PREF_CODE, cityCode: DEFAULT_CITY_CODE,
-    displayPref: "デフォルト", displayAddress: ""
+    displayPref: "東京（デフォルト）", displayAddress: ""
   });
   const [rowsAll, setRowsAll] = useState(null);
   const [areaName, setAreaName] = useState("");
