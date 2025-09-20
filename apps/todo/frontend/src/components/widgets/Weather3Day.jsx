@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 /* ===== デバッグ表示（?debugWeather） ===== */
-const DEBUG_WEATHER = typeof window !== "undefined"
-  ? new URLSearchParams(window.location.search).has("debugWeather")
-  : false;
+const DEBUG_WEATHER =
+  typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).has("debugWeather")
+    : false;
 
 /* ===== 設定 ===== */
 const DEFAULT_PREF_CODE = import.meta.env.VITE_JMA_FORECAST_CODE || "130000"; // 東京都
@@ -59,9 +60,9 @@ function pickLongest(tsList, predHas) {
 }
 
 /* ===== weatherCode → 絵文字・ラベル ===== */
-const JMA_ICON = {"100":"☀️","101":"⛅","102":"🌤️","200":"☁️","201":"🌥️","202":"🌥️","300":"🌧️","301":"🌦️","302":"🌦️","303":"🌦️","304":"🌦️","400":"🌨️","401":"🌨️","402":"🌨️","403":"🌨️","404":"🌨️","500":"⛈️"};
+const JMA_ICON  = {"100":"☀️","101":"⛅","102":"🌤️","200":"☁️","201":"🌥️","202":"🌥️","300":"🌧️","301":"🌦️","302":"🌦️","303":"🌦️","304":"🌦️","400":"🌨️","401":"🌨️","402":"🌨️","403":"🌨️","404":"🌨️","500":"⛈️"};
 const JMA_LABEL = {"100":"晴れ","101":"晴時々曇","102":"晴一時曇","200":"くもり","201":"くもり時々晴","202":"くもり一時晴","300":"雨","301":"雨時々晴","302":"雨一時晴","303":"雨時々くもり","304":"雨一時くもり","400":"雪","401":"雪時々晴","402":"雪一時晴","403":"雪時々くもり","404":"雪一時くもり","500":"雷雨"};
-const iconOf = (code="") => JMA_ICON[code] || "🌤️";
+const iconOf  = (code="") => JMA_ICON[code]  || "🌤️";
 const labelOf = (code="", fallbackText="") => JMA_LABEL[code] || fallbackText || "（未発表）";
 
 /* ===== JMA JSON パース ===== */
@@ -91,7 +92,7 @@ function parseJma(json, cityCode) {
   const areaW = pickArea(tsWeather);
   const areaT = tsTemps ? pickArea(tsTemps) : null;
   const areaP = tsPops ? pickArea(tsPops) : null;
-  const areaName = areaW?.area?.name || areaW?.areaName || ""; // 例：東京地方、埼玉県北部
+  const areaName = areaW?.area?.name || areaW?.areaName || "";
 
   const popByDate = {};
   if (areaP && tsPops.timeDefines?.length) {
@@ -143,7 +144,7 @@ async function fetchJma(prefCode, cityCode) {
   return parseJma(json, cityCode);
 }
 
-/* ===== 位置情報 → PREF_CODE 判定（住所表示は都道府県+市区町村） ===== */
+/* ===== 位置情報 → PREF_CODE 判定 ===== */
 async function detectPrefCityCode() {
   try {
     const pos = await new Promise((resolve, reject) =>
@@ -155,31 +156,26 @@ async function detectPrefCityCode() {
     let prefName = "";
     let address = "";
 
-    // 1) GSI（失敗しても次へ）
+    // GSI
     try {
       const r = await fetch(`https://mreversegeocode.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`);
       const j = await r.json();
       prefName = j?.results?.lv1 || "";
-      // GSIのaddressは番地まで長いことがあるが、都道府県+市区町村の構成に揃えるためNominatimに任せる
-      address  = ""; 
-    } catch (e) {
-      console.warn("[WeatherDebug] GSI reverse failed", e);
-    }
+      address  = "";
+    } catch {}
 
-    // 2) Nominatim（住所の確定とpref補完）
+    // Nominatim
     try {
       const r2 = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=ja`);
       const j2 = await r2.json();
       const p2 = j2?.address?.state || j2?.address?.province || "";
       const c2 = j2?.address?.city || j2?.address?.town || j2?.address?.village || "";
       if (p2) prefName = p2;
-      address = [prefName, c2].filter(Boolean).join(" "); // 「埼玉県 草加市」など
-    } catch (e2) {
-      console.warn("[WeatherDebug] Nominatim reverse failed", e2);
-      if (!address && prefName) address = prefName; // 最低限
+      address = [prefName, c2].filter(Boolean).join(" ");
+    } catch {
+      if (!address && prefName) address = prefName;
     }
 
-    // 3) PREF_MAP のキーに補正（前方一致）
     if (!PREF_MAP[prefName]) {
       for (const key of Object.keys(PREF_MAP)) {
         if (prefName && prefName.startsWith(key)) { prefName = key; break; }
@@ -188,19 +184,11 @@ async function detectPrefCityCode() {
 
     const prefCode = PREF_MAP[prefName] || DEFAULT_PREF_CODE;
 
-    return {
-      prefCode,
-      cityCode: null,
-      displayPref: address || prefName || "不明",  // ← 見出しに出す文字：埼玉県 草加市
-      displayAddress: address || "",
-      _debug: { lat, lon, prefFromGsi: prefName, addressFromGsi: address, mappedPrefCode: prefCode }
-    };
+    return { prefCode, cityCode: null, displayPref: address || prefName || "不明", displayAddress: address || "" };
   } catch (e) {
-    console.warn("位置情報取得失敗", e);
     return {
       prefCode: DEFAULT_PREF_CODE, cityCode: DEFAULT_CITY_CODE,
-      displayPref: "東京（デフォルト）", displayAddress: "未取得",
-      _debug: { reason: String(e) }
+      displayPref: "東京（デフォルト）", displayAddress: ""
     };
   }
 }
@@ -219,15 +207,14 @@ export default function Weather3Day() {
 
   const k = useMemo(() => cacheKey(prefCity.prefCode, prefCity.cityCode), [prefCity.prefCode, prefCity.cityCode]);
 
-  // 初回：現在地で上書き
+  // 位置情報で上書き
   useEffect(() => {
     detectPrefCityCode().then((res) => {
-      if (res?._debug) setDebug(res._debug);
       setPrefCity(res);
     });
   }, []);
 
-  // 取得 & キャッシュ
+  // JMA取得 & キャッシュ
   useEffect(() => {
     let alive = true;
     const cached = loadCache(k, CACHE_MIN);
@@ -254,30 +241,25 @@ export default function Weather3Day() {
     })();
 
     return () => { alive = false; };
-  }, [k]);
+  }, [k, prefCity.prefCode, prefCity.cityCode]);
 
-  if (err) return <div className="rounded-xl border p-3 text-sm text-red-600">天気の取得に失敗しました：{err}</div>;
-  if (!rowsAll) return <div className="rounded-xl border p-3 text-sm opacity-70">天気を読み込み中…</div>;
+  if (err) return <div className="rounded-2xl border p-3 text-sm text-red-600">天気の取得に失敗しました：{err}</div>;
+  if (!rowsAll) return <div className="rounded-2xl border p-3 text-sm opacity-70">天気を読み込み中…</div>;
 
   const rows = Array.isArray(rowsAll) ? rowsAll : (rowsAll.rows || []);
   const viewDays = Math.min(days, rows.length);
 
   return (
     <div className="rounded-2xl border p-3">
-      {/* 見出し：JMAを削除し、住所チップだけ表示 */}
+      {/* 見出し */}
       <div className="mb-2 flex items-center justify-between">
         <div className="font-bold flex items-center gap-2">
           天気
-          <span
-            className="text-xs rounded-md border px-2 py-0.5 bg-white max-w-[180px] sm:max-w-none truncate"
-            title={prefCity.displayPref}
-          >
+          <span className="text-xs rounded-md border px-2 py-0.5 bg-white max-w-[180px] sm:max-w-none truncate" title={prefCity.displayPref}>
             {prefCity.displayPref}
           </span>
         </div>
-
-        {/* 日数ボタン：横4つ固定 */}
-        <div className="grid grid-cols-4 gap-1 w-[180px] sm:w-auto">
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-1 w-[140px] sm:w-auto">
           {DAYS_OPTIONS.map((d) => (
             <button
               type="button"
@@ -291,18 +273,22 @@ export default function Weather3Day() {
         </div>
       </div>
 
-      {/* 予報カード：スマホ最大3列想定だがここでは1/2/3レスポンシブ */}
+      {/* カード：スマホは横並び（アイコン左／文字右）、PCは従来の縦 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-sm">
         {rows.slice(0, viewDays).map((d, i) => (
-          <div key={i} className="rounded-xl p-2 border">
-            <div className="text-xs opacity-70">{d.label}</div>
-            <div className="text-2xl leading-none">{d.icon}</div>
-            <div className="truncate">{d.text}</div>
-            <div className="mt-1 text-xs opacity-70">
-              最高: {d.tMax != null ? `${d.tMax}℃` : "未発表"} / 最低: {d.tMin != null ? `${d.tMin}℃` : "未発表"}
-            </div>
-            <div className="text-xs opacity-70">
-              降水確率: {d.pop != null ? `${d.pop}%` : "未発表"}
+          <div key={i} className="rounded-xl p-2 border flex items-center gap-3 sm:block">
+            {/* アイコン大（モバイル） */}
+            <div className="text-4xl sm:text-2xl shrink-0 leading-none">{d.icon}</div>
+            {/* テキスト群 */}
+            <div className="flex-1 min-w-0">
+              <div className="text-xs opacity-70">{d.label}</div>
+              <div className="truncate text-base sm:text-sm">{d.text}</div>
+              <div className="mt-1 text-xs opacity-70">
+                最高: {d.tMax != null ? `${d.tMax}℃` : "未発表"} / 最低: {d.tMin != null ? `${d.tMin}℃` : "未発表"}
+              </div>
+              <div className="text-xs opacity-70">
+                降水確率: {d.pop != null ? `${d.pop}%` : "未発表"}
+              </div>
             </div>
           </div>
         ))}
@@ -311,20 +297,12 @@ export default function Weather3Day() {
       {DEBUG_WEATHER && (
         <pre className="mt-2 text-[11px] whitespace-pre-wrap bg-gray-50 border rounded p-2 overflow-auto">
           <b>WeatherDebug</b>
-          {"\n"}lat/lon: {debug.lat ?? "-"}, {debug.lon ?? "-"}
-          {"\n"}pref(from): {debug.prefFromGsi ?? "-"}
-          {"\n"}addr: {debug.addressFromGsi ?? "-"}
-          {"\n"}mapped PREF_CODE: {debug.mappedPrefCode ?? "-"}
           {"\n"}used PREF_CODE: {prefCity.prefCode} / CITY_CODE: {prefCity.cityCode ?? "-"}
           {"\n"}JMA areaName: {areaName || "-"}
-          {debug.reason ? `\nreason: ${debug.reason}` : ""}
         </pre>
       )}
 
-      {/* 出典をシンプルに */}
-      <div className="mt-2 text-[11px] opacity-60">
-        出典: 気象庁 防災気象情報（JMA JSON）
-      </div>
+      <div className="mt-2 text-[11px] opacity-60">出典: 気象庁 防災気象情報（JMA JSON）</div>
     </div>
   );
 }

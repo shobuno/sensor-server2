@@ -70,14 +70,33 @@ export default function MiniCalendar({ onPickDay }) {
     const inMonth = isSameMonth(d, cursor);
     const isHoliday = Boolean(holidays[ymd(d)]);
 
-    const base = "flex items-center justify-center rounded-md text-sm w-8 h-8";
+    // デフォルト背景を白に固定（通常日＝白）
+    const base =
+      "flex items-center justify-center rounded-md text-sm w-8 h-8 bg-white";
     const muted = inMonth ? "" : " text-muted-foreground";
-    const todayCls = isToday ? " ring-2 ring-amber-400 ring-offset-1 font-bold" : "";
-    const sat = wd === 6 ? " text-sky-600" : "";
-    const sun = wd === 0 ? " text-red-600" : "";
-    const hol = isHoliday ? " text-red-600 font-medium" : "";
-    return base + muted + todayCls + (isHoliday ? hol : sun || sat);
+
+    const todayCls =
+      isToday ? " ring-2 ring-amber-400 ring-offset-1 font-bold" : "";
+
+    // 背景と文字色を必要な場合だけ上書き
+    let colorCls = "";
+    let bgCls = "";
+    if (isHoliday || wd === 0) {
+      // 祝日 or 日曜：文字 赤、背景 薄い赤
+      colorCls = " text-red-600";
+      bgCls = " bg-red-50";
+    } else if (wd === 6) {
+      // 土曜：文字 青、背景 薄い灰
+      colorCls = " text-sky-600";
+      bgCls = " bg-gray-50";
+    }
+
+    // 月外は背景色も消して白を外す（枠だけの見た目にしたい場合）
+    const outMonthBg = inMonth ? "" : " bg-transparent";
+
+    return base + muted + todayCls + colorCls + bgCls + outMonthBg;
   }
+
 
   return (
     <div className="mt-3 border rounded-md p-2 bg-white">

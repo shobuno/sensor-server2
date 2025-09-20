@@ -105,16 +105,13 @@ export default function TodayRunView() {
   const [loading, setLoading] = useState(true);
 
   // 祝日クリックの詳細表示（PC/モバイル共通）
-  const [holidayInfo, setHolidayInfo] = useState(null); // {date: 'YYYY-MM-DD'}
+  const [holidayInfo, setHolidayInfo] = useState(null); // { date: 'YYYY-MM-DD', ...meta }
 
   // === 祝日カレンダー/3日予報用の状態 ===
   const today = useMemo(() => new Date(), []);
-  const [viewDate, setViewDate] = useState(today);
-  const viewYear  = viewDate.getFullYear();
-  const viewMonth = viewDate.getMonth() + 1;
+  const [viewDate] = useState(today);
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const [selectedYmd, setSelectedYmd] = useState(ymd(today));
-
 
   const [showDone, setShowDone] = useSessionState("todo:today:showDone", false);
   const [persistedTags, setPersistedTags] = useSessionState("todo:today:selectedTags", []);
@@ -322,6 +319,24 @@ export default function TodayRunView() {
     return { topMsg: msg, topMsgClass: cls };
   }, [todoOverdue.length, todoDueSoon.length, todoHasAny]);
 
+  const hasLeft = normalCards.length > 0;
+
+  /* ===== 祝日名抽出（metaの形が変わっても拾えるよう多重に対応） ===== */
+  const { isHoliday, holidayNames } = useMemo(() => {
+    const m = holidayInfo || {};
+    const names = [];
+    if (Array.isArray(m.names)) names.push(...m.names);
+    if (Array.isArray(m.holidays)) {
+      for (const h of m.holidays) names.push(h?.name || h?.title || (typeof h === "string" ? h : null));
+    }
+    if (m.name) names.push(m.name);
+    if (m.title) names.push(m.title);
+    if (typeof m.holiday === "string") names.push(m.holiday);
+    const uniq = [...new Set(names.filter(Boolean))];
+    const flag = Boolean(m.isHoliday || m.holiday === true || uniq.length > 0);
+    return { isHoliday: flag, holidayNames: uniq };
+  }, [holidayInfo]);
+
   return (
     <div className="px-2 py-3 sm:px-1 md:p-4 max-w-6xl mx-auto">
       {/* ヘッダ */}
@@ -389,32 +404,55 @@ export default function TodayRunView() {
             </button>
           )}
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-4">
-        {/* 左：通常カード */}
-        <div>
-          {normalCards.map((it) => (
-            <TaskCard key={it.id} it={it} totalSec={dispTotalSec(it)} todaySec={dispTodaySec(it)}
-              onEdit={() => setEditing(it)} start={start} pause={pause} finish={finish} undoFinish={undoFinish}
-              onDbl={(e) => onCardDblClick(e, it)} chipClass={chipClass} onToggleTag={onToggleTag}
-              onSelectCategory={onSelectCategory} categoryFilter={categoryFilter} tagFilter={tagFilter} />
-          ))}
 
-          {/* モバイル：TODO＋ウィジェット */}
-          <div id="todo-panel" ref={todoRef} className="lg:hidden mt-6 rounded-2xl p-2 sm:p-3 border border-sky-200 bg-sky-50">
-            <div className="px-1 pb-1 font-bold text-sm md:text-base flex items-center justify-between">
-              <span>TODO（チェックで完了）</span>
-              <button className="text-xs underline text-blue-700" onClick={scrollToTop}>上へ戻る</button>
-            </div>
+      {/* ===== レイアウト本体 ===== */}
+      <div className={`grid gap-4 ${hasLeft ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_480px]" : "grid-cols-1"}`}>
+        {/* 左：通常カード（ある場合のみ表示） */}
+        {hasLeft && (
+          <div>
+            {normalCards.map((it) => (
+              <TaskCard
+                key={it.id}
+                it={it}
+                totalSec={dispTotalSec(it)}
+                todaySec={dispTodaySec(it)}
+                onEdit={() => setEditing(it)}
+                start={start}
+                pause={pause}
+                finish={finish}
+                undoFinish={undoFinish}
+                onDbl={(e) => onCardDblClick(e, it)}
+                chipClass={chipClass}
+                onToggleTag={onToggleTag}
+                onSelectCategory={setCategoryFilter}
+                categoryFilter={categoryFilter}
+                tagFilter={tagFilter}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* 右：縦スタック（PCは固定幅480px）／左が無いときは中央寄せ */}
+        <div className={`${hasLeft ? "" : "max-w-[520px] mx-auto"} flex flex-col gap-3`}>
+          {/* ▼ TODO（カード） */}
+          <aside
+            id="todo-panel"
+            ref={todoRef}
+            className="rounded-2xl p-3 border border-slate-200 bg-white"
+          >
+            <div className="pb-2 font-bold">TODO（チェックで完了）</div>
             <div className="space-y-2">
               {todoCards.length === 0 ? (
-                <div className="text-xs text-muted-foreground border rounded-md p-2 bg-white">TODOはありません</div>
+                <div className="text-xs text-muted-foreground border rounded-md p-2 bg-white">
+                  TODOはありません
+                </div>
               ) : (
                 todoCards.map((it) => {
                   const isDone = String(it.status || "").toUpperCase() === "DONE";
                   return (
                     <div
                       key={it.id}
-                      className={"rounded-xl border p-2 sm:p-2.5 cursor-pointer bg-white " + (isDone ? "opacity-70" : "")}
+                      className={"rounded-xl border p-2 bg-white " + (isDone ? "opacity-70" : "")}
                       onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditing(it); }}
                       title="ダブルクリックで編集"
                     >
@@ -425,16 +463,15 @@ export default function TodayRunView() {
                         </div>
 
                         <button
-                          className="px-2 py-1 rounded-lg border hover:bg-gray-50 text-xs sm:text-sm"
+                          className="px-2 py-1 rounded-lg border hover:bg-gray-50 text-xs"
                           onClick={(e) => { e.stopPropagation(); setEditing(it); }}
                           title="編集"
-                          aria-label="編集"
                         >
                           編集
                         </button>
 
                         <label
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-background text-xs sm:text-sm"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-background text-xs"
                           onClick={(e) => e.stopPropagation()}
                           title="完了（TODO型）"
                         >
@@ -450,8 +487,10 @@ export default function TodayRunView() {
                       </div>
 
                       {(it.due_at || it.due_date) && (
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {isOverdue(it) && <span className="mr-2 px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>}
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {isOverdue(it) && (
+                            <span className="mr-2 px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>
+                          )}
                           {it.due_at ? `期限: ${fmtLocal(it.due_at)}` : `期限: ${fmtDate(it.due_date)} 00:00`}
                         </div>
                       )}
@@ -460,118 +499,52 @@ export default function TodayRunView() {
                 })
               )}
             </div>
+          </aside>
 
-            {/* 祝日つきミニカレンダー（モバイル側） */}
-            <CalendarWithHolidays
-              onSelect={(d, meta)=>{
-                setSelectedYmd?.(d);
-                setHolidayInfo({ date: d, ...meta });
-              }}
-              className="mt-3"
-            />
-            {holidayInfo && (
-              <div className="mt-2 rounded-xl border bg-white p-2 text-sm">
-                <div className="font-semibold">{holidayInfo.date}</div>
-                {holidayInfo.isHoliday && (
-                  <div className="mt-0.5 text-rose-700">祝日: {holidayInfo.name}</div>
-                )}
-              </div>
-            )}
-            {/* 3日予報 */}
-            <Weather3Day className="mt-3" />
-          </div>
-        </div>
-
-        {/* PC：TODO＋ウィジェット */}
-          <aside
-            id="todo-panel"
-            ref={todoRef}
-            className="hidden lg:block sticky top-20 self-start rounded-2xl p-3 border border-slate-200 bg-white"
-          >
-          <div className="pb-2 font-bold">TODO（チェックで完了）</div>
-          <div className="space-y-2">
-            {todoCards.length === 0 ? (
-              <div className="text-xs text-muted-foreground border rounded-md p-2 bg-white">TODOはありません</div>
-            ) : (
-              todoCards.map((it) => {
-                const isDone = String(it.status || "").toUpperCase() === "DONE";
-                return (
-                  <div
-                    key={it.id}
-                    className={"rounded-xl border p-2 bg-white " + (isDone ? "opacity-70" : "")}
-                    onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditing(it); }}
-                    title="ダブルクリックで編集"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 min-w-0 truncate">
-                        <span className={isDone ? "line-through" : ""}>{it.title}</span>
-                        {it.priority && <span className="ml-1 text-yellow-500">{"★".repeat(it.priority)}</span>}
-                      </div>
-
-                      <button
-                        className="px-2 py-1 rounded-lg border hover:bg-gray-50 text-xs"
-                        onClick={(e) => { e.stopPropagation(); setEditing(it); }}
-                        title="編集"
-                      >
-                        編集
-                      </button>
-
-                      <label
-                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border bg-background text-xs"
-                        onClick={(e) => e.stopPropagation()}
-                        title="完了（TODO型）"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isDone}
-                          onChange={async (e) => {
-                            try { await toggleDoneTodoKind(it, e.target.checked, setItems); } catch {}
-                          }}
-                        />
-                        <span className="select-none">完了</span>
-                      </label>
-                    </div>
-
-                    {(it.due_at || it.due_date) && (
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        {isOverdue(it) && <span className="mr-2 px-1.5 py-0.5 rounded bg-red-600 text-white">期限超過</span>}
-                        {it.due_at ? `期限: ${fmtLocal(it.due_at)}` : `期限: ${fmtDate(it.due_date)} 00:00`}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* 祝日つきミニカレンダー */}
+          {/* ▼ カレンダー（TODOと同じ幅で独立） */}
           <CalendarWithHolidays
-            year={viewYear}
-            month={viewMonth}
-            onSelect={(d, meta) => {
-              setSelectedYmd(d);
-              setHolidayInfo({ date: d, ...meta }); // 祝日情報も保持
-            }}
-            selectedYmd={selectedYmd}
-            className="mt-3"
+            onSelect={(d, meta) => { setSelectedYmd(d); setHolidayInfo({ date: d, ...(meta || {}) }); }}
           />
-          {holidayInfo && (
-            <div className="mt-2 rounded-xl border bg-white p-2 text-sm">
-              <div className="font-semibold">{holidayInfo.date}</div>
-              {holidayInfo.isHoliday && (
-                <div className="mt-0.5 text-rose-700">祝日: {holidayInfo.name}</div>
+
+          {/* ▼ 祝日詳細（クリックで表示復活：祝日なら名称、平日なら日付のみ） */}
+          <div className="rounded-xl border p-3 bg-white">
+            <div className="text-sm">
+              <span className="font-semibold">{selectedYmd}</span>
+              {isHoliday && (
+                <span className="ml-2 align-middle px-1.5 py-0.5 rounded bg-red-600 text-white text-xs">祝日</span>
               )}
             </div>
-          )}
-          {/* 3日予報 */}
-          <Weather3Day className="mt-3" />
-        </aside>
+
+            {isHoliday ? (
+              <div className="mt-1 text-sm">
+                {holidayNames.length > 0 ? (
+                  <span className="text-red-600 font-semibold">
+                    {holidayNames.join(" / ")}
+                  </span>
+                ) : (
+                  <span className="text-red-600 font-semibold">祝日</span>
+                )}
+              </div>
+            ) : (
+              <div className="mt-1 text-xs text-muted-foreground">　</div>
+            )}
+          </div>
+
+          {/* ▼ 天気（モバイルは少し大きめ） */}
+          <div className="sm:hidden">
+            <div className="w-full [&_img]:w-16 [&_img]:h-16 [&_svg]:w-16 [&_svg]:h-16 [&_.text-base]:text-lg [&_.text-sm]:text-[15px]">
+              <Weather3Day />
+            </div>
+          </div>
+          <div className="hidden sm:block">
+            <Weather3Day />
+          </div>
+        </div>
       </div>
 
       {editing && <EditItemModal item={editing} onCancel={closeModal} onSave={saveEdit} />}
     </div>
   );
-
 }
 
 /* --- 通常カード --- */
