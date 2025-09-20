@@ -247,9 +247,12 @@ export default function Weather3Day() {
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 font-bold">
           天気（JMA）
-          <span className="px-2 py-0.5 text-xs bg-white border rounded-md">
-            {prefCity.displayPref} / {areaName || "（JMA地域未特定）"}
-          </span>
+            <span
+              className="text-xs rounded-md border px-2 py-0.5 bg-white max-w-[160px] sm:max-w-none truncate"
+              title={`${prefCity.displayPref} / ${areaName || "（JMA地域未特定）"}`}
+            >
+              {prefCity.displayPref} / {areaName || "（JMA地域未特定）"}
+            </span>
         </div>
         <div className="space-x-1">
           {DAYS_OPTIONS.map((d) => (
@@ -285,7 +288,9 @@ export default function Weather3Day() {
       )}
 
       <div className="mt-2 text-[11px] opacity-60">
-        出典: 気象庁 / 位置: {prefCity.displayAddress || prefCity.displayPref}
+        出典: 気象庁 防災気象情報（JMA JSON）
+        {" / "}位置: {prefCity.displayAddress || prefCity.displayPref}
+        {" / "}JMA地域: {areaName || "未特定"}
       </div>
     </div>
   );
