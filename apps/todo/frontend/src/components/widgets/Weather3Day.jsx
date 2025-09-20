@@ -1,6 +1,11 @@
 // sensor-server/apps/todo/frontend/src/components/widgets/Weather3Day.jsx
 import { useEffect, useMemo, useState } from "react";
 
+// URLに ?debugWeather を付けると画面にもデバッグ情報を出します
+const DEBUG_WEATHER = typeof window !== "undefined"
+  ? new URLSearchParams(window.location.search).has("debugWeather")
+  : false;
+
 /* ===== 設定 ===== */
 const DEFAULT_PREF_CODE = import.meta.env.VITE_JMA_FORECAST_CODE || "130000"; // 東京都
 const DEFAULT_CITY_CODE = import.meta.env.VITE_JMA_CITY_CODE || null;
@@ -139,28 +144,39 @@ async function fetchJma(prefCode, cityCode) {
 }
 
 /* ===== 位置情報 → 都道府県推定（表示名も返す）===== */
-async function detectPrefCityCode() {
-  try {
-    const pos = await new Promise((resolve, reject) =>
-      navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-    );
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
-    const r = await fetch(`https://mreversegeocode.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`);
-    const j = await r.json();
-
-    // GSIの戻りはパターンがいくつかあるので安全に拾う
-    const prefName = j.results?.lv1 || j.results?.prefecture || "";
-    const address = j.results?.address || ""; // 市区町村＋字レベル
-    const display = prefName ? `${prefName} ${address ? `・${address}` : ""}` : address || "位置情報から判定";
-
-    const prefCode = PREF_MAP[prefName] || DEFAULT_PREF_CODE;
-    return { prefCode, cityCode: null, displayPref: prefName || "（不明）", displayAddress: display };
-  } catch (e) {
+ async function detectPrefCityCode() {
+   try {
+     const pos = await new Promise((resolve, reject) =>
+       navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+     );
+     const lat = pos.coords.latitude;
+     const lon = pos.coords.longitude;
+     const res = await fetch(
+       `https://mreversegeocode.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`
+     );
+     const json = await res.json();
+    const prefName = json.results?.lv1 || json.results?.prefecture || "";
+    const address  = json.results?.address || "";
+     const prefCode = PREF_MAP[prefName] || DEFAULT_PREF_CODE;
+    // ⇩ ここでコンソールに詳細を出す
+    console.info("[WeatherDebug] GSI reverse", { lat, lon, results: json.results });
+    console.info("[WeatherDebug] Pref mapping", { prefName, prefCode });
+    // debug state も返す
+    return {
+      prefCode,
+      cityCode: null,
+      _debug: { lat, lon, prefFromGsi: prefName || "(不明)", addressFromGsi: address, mappedPrefCode: prefCode }
+    };
+   } catch (e) {
     console.warn("位置情報が取得できなかったためデフォルトを使用します", e);
-    return { prefCode: DEFAULT_PREF_CODE, cityCode: DEFAULT_CITY_CODE, displayPref: "デフォルト", displayAddress: "未取得" };
-  }
-}
+    return {
+      prefCode: DEFAULT_PREF_CODE,
+      cityCode: DEFAULT_CITY_CODE,
+      _debug: { reason: String(e?.message || e) }
+    };
+   }
+ }
+
 
 /* ===== 本体 ===== */
 export default function Weather3Day() {
@@ -171,13 +187,37 @@ export default function Weather3Day() {
     displayAddress: "",
   });
   const [rowsAll, setRowsAll] = useState(null);        // rows[] or {rows, meta}
+  const [debug, setDebug] = useState({
+    lat: null, lon: null,
+    prefFromGsi: null, addressFromGsi: null,
+    mappedPrefCode: null, usedPrefCode: null, usedCityCode: null,
+    jmaAreaName: null, reason: null,
+  });
   const [areaName, setAreaName] = useState("");        // JMAの地域名（例：東京地方）
   const [err, setErr] = useState(null);
   const [days, setDays] = useState(DAYS_OPTIONS[0]);
 
   const k = useMemo(() => cacheKey(prefCity.prefCode, prefCity.cityCode), [prefCity.prefCode, prefCity.cityCode]);
 
-  useEffect(() => { detectPrefCityCode().then(setPrefCity); }, []);
+ useEffect(() => {
+  // マウント時に位置情報で上書き
+  detectPrefCityCode().then((res) => {
+    if (res?._debug) {
+      setDebug((d) => ({ ...d,
+        lat: res._debug.lat ?? d.lat,
+        lon: res._debug.lon ?? d.lon,
+        prefFromGsi: res._debug.prefFromGsi ?? d.prefFromGsi,
+        addressFromGsi: res._debug.addressFromGsi ?? d.addressFromGsi,
+        mappedPrefCode: res._debug.mappedPrefCode ?? d.mappedPrefCode,
+        reason: res._debug.reason ?? d.reason,
+      }));
+    }
+    setPrefCity({ prefCode: res.prefCode, cityCode: res.cityCode,
+      displayPref: res.displayPref ?? "（自動）",
+      displayAddress: res.displayAddress ?? "" });
+  });
+ }, []);
+
 
   useEffect(() => {
     let alive = true;
@@ -199,6 +239,17 @@ export default function Weather3Day() {
         setRowsAll(rows);
         setAreaName(meta?.areaName || "");
         saveCache(k, { rows, meta });
+    console.info("[WeatherDebug] JMA fetched", {
+      prefCode: prefCity.prefCode,
+      cityCode: prefCity.cityCode,
+      items: rows?.length,
+      areaName: meta?.areaName
+    });
+    setDebug((d) => ({ ...d,
+      usedPrefCode: prefCity.prefCode,
+      usedCityCode: prefCity.cityCode,
+      jmaAreaName: meta?.areaName || d.jmaAreaName
+    }));
       } catch (e) {
         if (!alive) return;
         if (!cached) setErr(String(e?.message || e));
@@ -255,6 +306,18 @@ export default function Weather3Day() {
         ))}
       </div>
 
+{DEBUG_WEATHER && (
+  <pre className="mt-2 text-[11px] whitespace-pre-wrap bg-gray-50 border rounded p-2 overflow-auto">
+    <b>WeatherDebug</b>
+    {"\n"}lat/lon: {debug.lat ?? "-"}, {debug.lon ?? "-"}
+    {"\n"}GSI prefecture: {debug.prefFromGsi ?? "-"}
+    {"\n"}GSI address: {debug.addressFromGsi ?? "-"}
+    {"\n"}mapped PREF_CODE: {debug.mappedPrefCode ?? "-"}
+    {"\n"}used PREF_CODE: {debug.usedPrefCode ?? "-"} / CITY_CODE: {debug.usedCityCode ?? "-"}
+    {"\n"}JMA areaName: {debug.jmaAreaName ?? "-"}
+    {debug.reason ? `\nreason: ${debug.reason}` : ""}
+  </pre>
+)}
       <div className="mt-2 text-[11px] opacity-60">
         出典: 気象庁 防災気象情報（JMA JSON） / 位置: {prefCity.displayAddress || prefCity.displayPref} / 表示日数は取得可能範囲内で切替
       </div>
