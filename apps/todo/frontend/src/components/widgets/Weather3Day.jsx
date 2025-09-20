@@ -1,308 +1,263 @@
 // sensor-server/apps/todo/frontend/src/components/widgets/Weather3Day.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-/**
- * OpenWeather から 3日分の “日次ハイライト” を作るウィジェット。
- * 取得優先順:
- *  - (One Call 3.0 daily) lat/lon + apiKey があれば daily から3日分
- *  - cityId があれば /forecast(3h) から3日分を日毎に集計（最高/最低/代表アイコン）
- *
- * 端末ごとキャッシュ方針:
- *  - localStorage に { ts, rows, place, meta } を KEY= weather3day:<hash> で保存
- *  - TTL は 30分。TTL内はAPIコールしない（最大30分に1回）
- *  - 期限切れ後に取得失敗した場合は古いキャッシュをフォールバック表示
- *
- * props:
- *   className?: string
- */
-export default function Weather3Day({ className = "" }) {
-  const [rows, setRows] = useState([]); // [{date, max, min, icon, desc, pop}]
-  const [place, setPlace] = useState("");
+/* ===== 設定 ===== */
+const DEFAULT_PREF_CODE = import.meta.env.VITE_JMA_FORECAST_CODE || "130000"; // 東京都
+const DEFAULT_CITY_CODE = import.meta.env.VITE_JMA_CITY_CODE || null;
+const CACHE_MIN = Number(import.meta.env.VITE_WEATHER_CACHE_MINUTES || 60);
+const DAYS_OPTIONS = [3, 5, 7, 10];
 
-  useEffect(() => {
-    let alive = true;
+/* ===== 都道府県名 → JMA PREF_CODE ===== */
+const PREF_MAP = {
+  "北海道": "016000","青森県":"020000","岩手県":"030000","宮城県":"040000","秋田県":"050000","山形県":"060000","福島県":"070000",
+  "茨城県":"080000","栃木県":"090000","群馬県":"100000","埼玉県":"110000","千葉県":"120000","東京都":"130000","神奈川県":"140000",
+  "新潟県":"150000","富山県":"160000","石川県":"170000","福井県":"180000","山梨県":"190000","長野県":"200000","岐阜県":"210000",
+  "静岡県":"220000","愛知県":"230000","三重県":"240000","滋賀県":"250000","京都府":"260000","大阪府":"270000","兵庫県":"280000",
+  "奈良県":"290000","和歌山県":"300000","鳥取県":"310000","島根県":"320000","岡山県":"330000","広島県":"340000","山口県":"350000",
+  "徳島県":"360000","香川県":"370000","愛媛県":"380000","高知県":"390000","福岡県":"400000","佐賀県":"410000","長崎県":"420000",
+  "熊本県":"430000","大分県":"440000","宮崎県":"450000","鹿児島県":"460100","沖縄県":"471000",
+};
 
-    const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
-    const lat = (import.meta.env.VITE_WEATHER_LAT || "").trim();
-    const lon = (import.meta.env.VITE_WEATHER_LON || "").trim();
-    const cityId =
-      (import.meta.env.VITE_WEATHER_CITY_ID ||
-        import.meta.env.VITE_OPENWEATHER_CITY_ID ||
-        ""
-      ).trim();
+/* ===== JMA ===== */
+const JMA_URL = (prefCode) =>
+  `https://www.jma.go.jp/bosai/forecast/data/forecast/${prefCode}.json`;
+const cacheKey = (pref, city) => `weather:jma:${pref}:${city || "first"}`;
 
-    const units = "metric"; // 必要なら env で切替可
-    const lang = "ja";
-    const TTL_MS = 30 * 60 * 1000;
-
-    const source = lat && lon ? "onecall" : cityId ? "forecast" : "none";
-    const cacheKey = makeCacheKey({
-      v: 1,
-      source,
-      lat,
-      lon,
-      cityId,
-      units,
-      lang,
-    });
-
-    // 1) キャッシュ確認
-    const cached = readCache(cacheKey);
-    const now = Date.now();
-
-    // キャッシュが有効なら即時反映 & 取得をスキップ
-    if (cached && now - cached.ts < TTL_MS) {
-      setRows(cached.rows || []);
-      setPlace(cached.place || "");
-      return; // ここで終了 → APIコールなし（30分制限）
-    }
-
-    // 2) 期限切れ or 無い → 取得を試みる
-    (async () => {
-      try {
-        if (!apiKey || source === "none") {
-          // APIキー/座標/CityIDが未設定ならキャッシュフォールバックのみ
-          if (cached) {
-            setRows(cached.rows || []);
-            setPlace(cached.place || "");
-          } else {
-            setRows([]);
-          }
-          return;
-        }
-
-        if (source === "onecall") {
-          // One Call 3.0 → 失敗したら forecast に自動フォールバック
-          try {
-            const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${encodeURIComponent(
-              lat
-            )}&lon=${encodeURIComponent(
-              lon
-            )}&exclude=minutely,hourly,alerts&units=${encodeURIComponent(
-              units
-            )}&lang=${encodeURIComponent(lang)}&appid=${encodeURIComponent(
-              apiKey
-            )}`;
-            const r = await fetch(url);
-            if (!r.ok) throw new Error(`onecall3.0 ${r.status}`);
-            const j = await r.json();
-            if (!alive) return;
-
-            const daily = (j?.daily || []).slice(0, 3).map((d) => ({
-              date: ymdFromUnix(d.dt),
-              max: Math.round(d.temp?.max),
-              min: Math.round(d.temp?.min),
-              icon: d.weather?.[0]?.icon,
-              desc: d.weather?.[0]?.description || "",
-              pop: Math.round((d.pop || 0) * 100),
-            }));
-
-            setRows(daily);
-            setPlace(j?.timezone || `${lat},${lon}`);
-            writeCache(cacheKey, {
-              ts: now,
-              rows: daily,
-              place: j?.timezone || `${lat},${lon}`,
-              meta: { from: "onecall" },
-            });
-            return;
-          } catch {
-            // フォールバック → forecast
-            const { rows: days, place: p } = await loadFromForecast({
-              q: `lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(
-                lon
-              )}`,
-              apiKey,
-              units,
-              lang,
-              alive,
-            });
-            setRows(days);
-            setPlace(p);
-            writeCache(cacheKey, {
-              ts: Date.now(),
-              rows: days,
-              place: p,
-              meta: { from: "forecast-fallback" },
-            });
-            return;
-          }
-        }
-
-        if (source === "forecast") {
-          const { rows: days, place: p } = await loadFromForecast({
-            q: `id=${encodeURIComponent(cityId)}`,
-            apiKey,
-            units,
-            lang,
-            alive,
-          });
-          setRows(days);
-          setPlace(p);
-          writeCache(cacheKey, {
-            ts: Date.now(),
-            rows: days,
-            place: p,
-            meta: { from: "forecast" },
-          });
-          return;
-        }
-      } catch (e) {
-        console.warn("weather fetch failed", e);
-        // 失敗時はキャッシュがあればフォールバック
-        if (cached) {
-          setRows(cached.rows || []);
-          setPlace(cached.place || "");
-        } else {
-          setRows([]);
-        }
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  if (!rows?.length) {
-    return (
-      <div className={`rounded-2xl p-3 bg-white border text-slate-700 ${className}`}>
-        <div className="text-sm opacity-70">3日予報</div>
-        <div className="text-xs mt-1 text-slate-500">
-          APIキーまたは座標/CityIDが未設定です
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={`rounded-2xl p-3 bg-white border text-slate-800 ${className}`}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm text-slate-600">3日予報</div>
-        <div className="text-xs text-slate-500">{place}</div>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {rows.map((r) => (
-          <div key={r.date} className="rounded-xl p-2 bg-white border border-slate-200">
-            <div className="text-xs text-slate-500">{labelJp(r.date)}</div>
-            <div className="flex items-center gap-2 mt-1">
-              {r.icon ? (
-                <img
-                  alt={r.desc}
-                  className="w-9 h-9"
-                  src={`https://openweathermap.org/img/wn/${r.icon}@2x.png`}
-                />
-              ) : (
-                <div className="w-9 h-9" />
-              )}
-              <div className="text-base font-semibold">
-                {r.max}° / <span className="text-slate-500 font-normal">{r.min}°</span>
-              </div>
-            </div>
-            <div className="text-[11px] text-slate-600 truncate">{r.desc}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">降水確率 {r.pop}%</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+/* ===== キャッシュ ===== */
+function saveCache(key, data) {
+  try { localStorage.setItem(key, JSON.stringify({ t: Date.now(), data })); } catch {}
 }
-
-/* ===== Helpers ===== */
-
-function makeCacheKey({ v, source, lat, lon, cityId, units, lang }) {
-  const keyObj =
-    source === "onecall"
-      ? { v, source, lat, lon, units, lang }
-      : { v, source, cityId, units, lang };
-  return `weather3day:${hash(JSON.stringify(keyObj))}`;
-}
-
-function readCache(key) {
+function loadCache(key, ttlMinutes) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-function writeCache(key, obj) {
-  try {
-    localStorage.setItem(key, JSON.stringify(obj));
-  } catch {
-    // storage full などは無視
-  }
+    const obj = JSON.parse(raw);
+    if (!obj?.t || !obj?.data) return null;
+    const ageMin = (Date.now() - obj.t) / 60000;
+    if (ageMin > ttlMinutes) return null;
+    return obj.data;
+  } catch { return null; }
 }
 
-// forecast(3h) を日毎に集計
-async function loadFromForecast({ q, apiKey, units, lang, alive }) {
-  const r = await fetch(
-    `https://api.openweathermap.org/data/2.5/forecast?${q}&units=${encodeURIComponent(
-      units
-    )}&lang=${encodeURIComponent(lang)}&appid=${encodeURIComponent(apiKey)}`
-  );
-  if (!r.ok) throw new Error(`forecast ${r.status}`);
-  const j = await r.json();
-  if (!alive) return { rows: [], place: "" };
+/* ===== Utils ===== */
+const z2 = (n) => (n < 10 ? `0${n}` : String(n));
+const fmtMd = (dateStr) => {
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${z2(d.getMonth() + 1)}/${z2(d.getDate())}`;
+};
+function pickLongest(tsList, predHas) {
+  const cands = (tsList || []).filter(predHas);
+  return cands.sort((a,b) =>
+    (b.timeDefines?.length || 0) - (a.timeDefines?.length || 0)
+  )[0] || null;
+}
 
-  const place = j?.city?.name || "";
-  const grouped = groupByDateJst(j?.list || []);
-  const days = Object.keys(grouped)
-    .sort()
-    .slice(0, 3)
-    .map((date) => {
-      const arr = grouped[date];
-      const temps = arr.map((x) => x.main?.temp).filter(isFinite);
-      const max = Math.round(Math.max(...temps));
-      const min = Math.round(Math.min(...temps));
-      const rep = arr.find((x) => x.dt_txt?.includes("12:00")) || arr[0];
-      const icon = rep?.weather?.[0]?.icon;
-      const desc = rep?.weather?.[0]?.description || "";
-      const popAvg = Math.round(100 * average(arr.map((x) => x.pop ?? 0)));
-      return { date, max, min, icon, desc, pop: popAvg };
+/* ===== weatherCode → 絵文字・ラベル ===== */
+const JMA_ICON = {"100":"☀️","101":"⛅","102":"🌤️","200":"☁️","201":"🌥️","202":"🌥️","300":"🌧️","301":"🌦️","302":"🌦️","303":"🌦️","304":"🌦️","400":"🌨️","401":"🌨️","402":"🌨️","403":"🌨️","404":"🌨️","500":"⛈️"};
+const JMA_LABEL = {"100":"晴れ","101":"晴時々曇","102":"晴一時曇","200":"くもり","201":"くもり時々晴","202":"くもり一時晴","300":"雨","301":"雨時々晴","302":"雨一時晴","303":"雨時々くもり","304":"雨一時くもり","400":"雪","401":"雪時々晴","402":"雪一時晴","403":"雪時々くもり","404":"雪一時くもり","500":"雷雨"};
+const iconOf = (code="") => JMA_ICON[code] || "🌤️";
+const labelOf = (code="", fallbackText="") => JMA_LABEL[code] || fallbackText || "（未発表）";
+
+/* ===== パース：rows + meta.areaName を返す ===== */
+function parseJma(json, cityCode) {
+  const blocks = Array.isArray(json) ? json : [];
+  if (!blocks.length) return { rows: [], meta: {} };
+
+  const allTs = [];
+  for (const b of blocks) for (const ts of (b.timeSeries || [])) allTs.push(ts);
+
+  const hasW = ts => ts?.areas?.[0]?.weatherCodes?.length || ts?.areas?.[0]?.weathers?.length;
+  const hasT = ts => ts?.areas?.[0]?.tempsMax?.length || ts?.areas?.[0]?.tempsMin?.length || ts?.areas?.[0]?.temps?.length;
+  const hasP = ts => ts?.areas?.[0]?.pops?.length;
+
+  const tsWeather = pickLongest(allTs, hasW);
+  const tsTemps   = pickLongest(allTs, hasT);
+  const tsPops    = pickLongest(allTs, hasP);
+  if (!tsWeather) return { rows: [], meta: {} };
+
+  const pickArea = (ts) => {
+    const areas = ts?.areas || [];
+    if (!areas.length) return null;
+    if (!cityCode) return areas[0];
+    return areas.find((a) => a?.area?.code === cityCode || a?.areaCode === cityCode) || areas[0];
+  };
+
+  const areaW = pickArea(tsWeather);
+  const areaT = tsTemps ? pickArea(tsTemps) : null;
+  const areaP = tsPops ? pickArea(tsPops) : null;
+  const areaName = areaW?.area?.name || areaW?.areaName || ""; // 東京地方 等
+
+  const popByDate = {};
+  if (areaP && tsPops.timeDefines?.length) {
+    (areaP.pops || []).forEach((p, idx) => {
+      if (p === "" || p == null) return;
+      const t = tsPops.timeDefines[idx];
+      const key = new Date(t).toDateString();
+      const v = Number(p);
+      popByDate[key] = Math.max(popByDate[key] ?? 0, v);
     });
-
-  return { rows: days, place };
-}
-
-function ymdFromUnix(u) {
-  const d = new Date(u * 1000);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const da = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${da}`;
-}
-function labelJp(ymd) {
-  const d = new Date(ymd + "T00:00:00+09:00");
-  const w = "日月火水木金土"[d.getDay()];
-  return `${ymd}（${w}）`;
-}
-function groupByDateJst(list) {
-  const out = {};
-  list.forEach((x) => {
-    // dt_txt はUTC。JSTに+9hして日付を切る
-    const t = new Date(x.dt_txt.replace(" ", "T") + "Z"); // UTCとして解釈
-    const j = new Date(t.getTime() + 9 * 60 * 60000);
-    const y = j.getFullYear();
-    const m = String(j.getMonth() + 1).padStart(2, "0");
-    const d = String(j.getDate()).padStart(2, "0");
-    const key = `${y}-${m}-${d}`;
-    (out[key] ||= []).push(x);
-  });
-  return out;
-}
-function average(arr) {
-  if (!arr?.length) return 0;
-  return arr.reduce((a, b) => a + b, 0) / arr.length;
-}
-
-// 簡易ハッシュ（衝突低確率で十分）
-function hash(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (h << 5) - h + s.charCodeAt(i);
-    h |= 0;
   }
-  return h.toString(36);
+
+  const rows = [];
+  const count = tsWeather.timeDefines.length;
+  for (let i = 0; i < count; i++) {
+    const date = tsWeather.timeDefines[i];
+    const code = areaW?.weatherCodes?.[i] || "";
+    const text = areaW?.weathers?.[i] || "";
+
+    let tMax = null, tMin = null;
+    if (areaT) {
+      if (Array.isArray(areaT.tempsMax)) tMax = areaT.tempsMax[i] ?? null;
+      if (Array.isArray(areaT.tempsMin)) tMin = areaT.tempsMin[i] ?? null;
+      if ((tMax == null || tMin == null) && Array.isArray(areaT.temps)) {
+        const v = areaT.temps[i];
+        if (tMax == null) tMax = v ?? null;
+        if (tMin == null) tMin = v ?? null;
+      }
+    }
+
+    const pop = popByDate[new Date(date).toDateString()];
+    rows.push({
+      date,
+      label: fmtMd(date),
+      icon: iconOf(code),
+      text: labelOf(code, text),
+      tMax: tMax != null && tMax !== "" ? Number(tMax) : null,
+      tMin: tMin != null && tMin !== "" ? Number(tMin) : null,
+      pop: (pop != null ? Number(pop) : null),
+    });
+  }
+  return { rows, meta: { areaName } };
+}
+
+async function fetchJma(prefCode, cityCode) {
+  const res = await fetch(JMA_URL(prefCode), { cache: "no-cache" });
+  if (!res.ok) throw new Error(`JMA fetch failed: ${res.status}`);
+  const json = await res.json();
+  return parseJma(json, cityCode);
+}
+
+/* ===== 位置情報 → 都道府県推定（表示名も返す）===== */
+async function detectPrefCityCode() {
+  try {
+    const pos = await new Promise((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+    );
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+    const r = await fetch(`https://mreversegeocode.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lon}`);
+    const j = await r.json();
+
+    // GSIの戻りはパターンがいくつかあるので安全に拾う
+    const prefName = j.results?.lv1 || j.results?.prefecture || "";
+    const address = j.results?.address || ""; // 市区町村＋字レベル
+    const display = prefName ? `${prefName} ${address ? `・${address}` : ""}` : address || "位置情報から判定";
+
+    const prefCode = PREF_MAP[prefName] || DEFAULT_PREF_CODE;
+    return { prefCode, cityCode: null, displayPref: prefName || "（不明）", displayAddress: display };
+  } catch (e) {
+    console.warn("位置情報が取得できなかったためデフォルトを使用します", e);
+    return { prefCode: DEFAULT_PREF_CODE, cityCode: DEFAULT_CITY_CODE, displayPref: "デフォルト", displayAddress: "未取得" };
+  }
+}
+
+/* ===== 本体 ===== */
+export default function Weather3Day() {
+  const [prefCity, setPrefCity] = useState({
+    prefCode: DEFAULT_PREF_CODE,
+    cityCode: DEFAULT_CITY_CODE,
+    displayPref: "デフォルト",
+    displayAddress: "",
+  });
+  const [rowsAll, setRowsAll] = useState(null);        // rows[] or {rows, meta}
+  const [areaName, setAreaName] = useState("");        // JMAの地域名（例：東京地方）
+  const [err, setErr] = useState(null);
+  const [days, setDays] = useState(DAYS_OPTIONS[0]);
+
+  const k = useMemo(() => cacheKey(prefCity.prefCode, prefCity.cityCode), [prefCity.prefCode, prefCity.cityCode]);
+
+  useEffect(() => { detectPrefCityCode().then(setPrefCity); }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const cached = loadCache(k, CACHE_MIN);
+    if (cached) {
+      // 旧キャッシュ互換（配列のみ保存していた場合）
+      if (Array.isArray(cached)) {
+        setRowsAll(cached);
+      } else if (cached?.rows) {
+        setRowsAll(cached.rows);
+        setAreaName(cached.meta?.areaName || "");
+      }
+    }
+
+    (async () => {
+      try {
+        const { rows, meta } = await fetchJma(prefCity.prefCode, prefCity.cityCode);
+        if (!alive) return;
+        setRowsAll(rows);
+        setAreaName(meta?.areaName || "");
+        saveCache(k, { rows, meta });
+      } catch (e) {
+        if (!alive) return;
+        if (!cached) setErr(String(e?.message || e));
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [k, prefCity.prefCode, prefCity.cityCode]);
+
+  if (err) return <div className="rounded-xl border p-3 text-sm text-red-600">天気の取得に失敗しました：{err}</div>;
+  if (!rowsAll) return <div className="rounded-xl border p-3 text-sm opacity-70">天気を読み込み中…</div>;
+
+  const rows = Array.isArray(rowsAll) ? rowsAll : (rowsAll.rows || []);
+  const viewDays = Math.min(days, rows.length);
+
+  return (
+    <div className="rounded-2xl border p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="font-bold flex items-center gap-2">
+          天気（JMA）
+          {/* 位置情報の表示 */}
+          <span className="text-xs rounded-md border px-2 py-0.5 bg-white">
+            {prefCity.displayPref} / {areaName || "（JMA地域未特定）"}
+          </span>
+        </div>
+        <div className="space-x-1">
+          {DAYS_OPTIONS.map((d) => (
+            <button
+              type="button"
+              key={d}
+              onClick={() => setDays(d)}
+              className={`px-2 py-1 rounded-md text-xs border ${d===days ? 'bg-gray-900 text-white' : 'bg-white hover:bg-gray-50'}`}
+            >
+              {d}日
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 常に最大3列まで */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+        {rows.slice(0, viewDays).map((d, i) => (
+          <div key={i} className="rounded-xl p-2 border">
+            <div className="text-xs opacity-70">{d.label}</div>
+            <div className="text-2xl leading-none">{d.icon}</div>
+            <div className="truncate">{d.text}</div>
+            <div className="mt-1 text-xs opacity-70">
+              最高: {d.tMax != null ? `${d.tMax}℃` : "未発表"} / 最低: {d.tMin != null ? `${d.tMin}℃` : "未発表"}
+            </div>
+            <div className="text-xs opacity-70">
+              降水確率: {d.pop != null ? `${d.pop}%` : "未発表"}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-2 text-[11px] opacity-60">
+        出典: 気象庁 防災気象情報（JMA JSON） / 位置: {prefCity.displayAddress || prefCity.displayPref} / 表示日数は取得可能範囲内で切替
+      </div>
+    </div>
+  );
 }
